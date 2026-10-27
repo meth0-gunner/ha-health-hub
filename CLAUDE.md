@@ -14,6 +14,10 @@ explain in plain terms, he installs things, Claude writes and pushes code).
 - Only send columns that are needed; never names, birthdays, MACs, locations, GPX.
 - Sensors have no state class on purpose; long-term history is external
   statistics (`health_hub:*`) written on the true times.
+- Phone app (`android/`) is built only by GitHub Actions (this workspace can't
+  reach Google's Maven). Published APKs are signed with `android/signing/release.p12`
+  (encrypted; password is the `HH_KEYSTORE_PASSWORD` repo secret). Never replace
+  that key casually: a new key forces Nick to uninstall and reinstall.
 - Run `pytest -q` before pushing (HA test harness: `pytest-homeassistant-custom-component`).
 - Target current Home Assistant (statistics metadata uses `mean_type` and
   `unit_class`; `has_mean` is gone).
