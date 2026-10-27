@@ -1,0 +1,44 @@
+name: Reviewer add-on
+
+# Home Assistant builds the add-on on the device from this Dockerfile. This
+# checks that it builds for both architectures and that Claude Code starts.
+on:
+  push:
+    paths:
+      - "health_hub_reviewer/**"
+      - ".github/workflows/addon.yml"
+  pull_request:
+    paths:
+      - "health_hub_reviewer/**"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+          - arch: aarch64
+            platform: linux/arm64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: Build
+        run: |
+          base=$(python3 -c "import yaml;print(yaml.safe_load(open('health_hub_reviewer/build.yaml'))['build_from']['${{ matrix.arch }}'])")
+          docker buildx build --load --platform ${{ matrix.platform }} \
+            --build-arg BUILD_FROM="$base" --build-arg BUILD_ARCH=${{ matrix.arch }} \
+            -t reviewer:test health_hub_reviewer
+      - name: Claude Code runs
+        run: docker run --rm --platform ${{ matrix.platform }} reviewer:test sh -c 'claude --version && cat /etc/claude-code-version'
+      - name: Reviewer starts and waits for a login
+        run: |
+          mkdir -p ha data
+          docker run --rm --platform ${{ matrix.platform }} -e HH_ONCE=1 \
+            -v "$PWD/ha:/homeassistant" -v "$PWD/data:/data" reviewer:test
+          cat ha/health_hub/review/status.json
+          grep -q '"no_login"' ha/health_hub/review/status.json

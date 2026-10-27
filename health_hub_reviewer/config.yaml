@@ -1,0 +1,23 @@
+name: Health Hub Reviewer
+description: Writes Health Hub's daily review with Claude, using the Claude Code add-on's existing login
+version: "0.1.0"
+slug: health_hub_reviewer
+url: https://github.com/meth0-gunner/ha-health-hub
+arch:
+  - aarch64
+  - amd64
+startup: application
+boot: auto
+init: true
+map:
+  - homeassistant_config:rw
+options:
+  model: ""
+  web_research: true
+  max_turns: 12
+  timeout_minutes: 10
+schema:
+  model: str?
+  web_research: bool
+  max_turns: int(1,40)
+  timeout_minutes: int(2,30)

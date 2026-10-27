@@ -1,0 +1,13 @@
+configuration:
+  model:
+    name: Model
+    description: Leave empty to use your plan's default model (for example "sonnet" or "opus").
+  web_research:
+    name: Web research
+    description: Let Claude check its observations against current sources on the web.
+  max_turns:
+    name: Maximum steps
+    description: Upper limit on Claude's steps (searches, page reads) per review.
+  timeout_minutes:
+    name: Time limit (minutes)
+    description: Give up on a review after this long.
