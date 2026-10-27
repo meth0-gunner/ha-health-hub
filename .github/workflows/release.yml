@@ -1,66 +1,82 @@
 name: Release
 
-# Push a tag like v0.1.0 to publish a release: HACS installs the integration
-# from it, and the phone app APK is attached for download.
+# Publishes a release whenever the version in manifest.json is one that hasn't
+# been released yet: HACS installs the integration from it, and the phone app
+# APK is attached. To release, bump "version" in manifest.json on main.
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   release:
     runs-on: ubuntu-latest
     env:
       HH_KEYSTORE_PASSWORD: ${{ secrets.HH_KEYSTORE_PASSWORD }}
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Version from tag
-        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
-
-      - name: Integration version must match the tag
+      - name: Is this version new?
+        id: check
         run: |
-          manifest=$(python3 -c "import json;print(json.load(open('custom_components/health_hub/manifest.json'))['version'])")
-          if [ "$manifest" != "$VERSION" ]; then
-            echo "::error::manifest.json says $manifest but the tag is $VERSION"; exit 1
+          VERSION=$(python3 -c "import json;print(json.load(open('custom_components/health_hub/manifest.json'))['version'])")
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          if gh release view "v$VERSION" > /dev/null 2>&1; then
+            echo "v$VERSION is already released; nothing to do."
+            echo "new=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "new=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Signing key must be available
+        if: steps.check.outputs.new == 'true'
         run: |
           if [ -z "$HH_KEYSTORE_PASSWORD" ]; then
             echo "::error::HH_KEYSTORE_PASSWORD secret is not set"; exit 1
           fi
 
       - uses: actions/setup-python@v5
+        if: steps.check.outputs.new == 'true'
         with:
           python-version: "3.13"
           cache: pip
           cache-dependency-path: requirements_test.txt
       - name: Integration tests
+        if: steps.check.outputs.new == 'true'
         run: pip install -r requirements_test.txt && pytest -q
 
       - uses: actions/setup-java@v5
+        if: steps.check.outputs.new == 'true'
         with:
           distribution: temurin
           java-version: "17"
       - uses: gradle/actions/setup-gradle@v4
+        if: steps.check.outputs.new == 'true'
         with:
           gradle-version: "8.11.1"
       - name: Build signed phone app
+        if: steps.check.outputs.new == 'true'
         working-directory: android
         run: gradle assembleRelease -PappVersion="$VERSION" --stacktrace
 
       - name: Publish
-        env:
-          GH_TOKEN: ${{ github.token }}
+        if: steps.check.outputs.new == 'true'
         run: |
           cp android/app/build/outputs/apk/release/app-release.apk "HealthHub-$VERSION.apk"
-          gh release create "$GITHUB_REF_NAME" "HealthHub-$VERSION.apk" \
+          printf '%s\n\n%s\n' \
+            "**Home Assistant:** install or update Health Hub in HACS, then restart Home Assistant." \
+            "**Phone:** download HealthHub-$VERSION.apk below on your phone and open it to install or update." \
+            > notes.md
+          gh release create "v$VERSION" "HealthHub-$VERSION.apk" \
+            --target "$GITHUB_SHA" \
             --title "Health Hub $VERSION" \
-            --notes-file - <<EOF
-          **Home Assistant:** update Health Hub in HACS.
-
-          **Phone:** download HealthHub-$VERSION.apk below on your phone and open it to install or update.
-          EOF
+            --notes-file notes.md \
+            --latest
