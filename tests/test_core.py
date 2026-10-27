@@ -72,6 +72,12 @@ def test_unit_detected_from_value():
     assert gb.to_seconds(1792996800123, gb.UNIT_S) == 1792996800
 
 
+def test_standing_is_hours_from_bitmask():
+    spec = gb.TABLES_BY_NAME["XIAOMI_DAILY_SUMMARY_SAMPLE"]
+    row = gb.normalise_row(spec, {"TIMESTAMP": DAY0 * 1000, "STANDING": 130944})  # 7am-4pm
+    assert row["standing"] == 10
+
+
 def test_millisecond_tables_and_timezone():
     spec = gb.TABLES_BY_NAME["XIAOMI_DAILY_SUMMARY_SAMPLE"]
     row = gb.normalise_row(spec, {"TIMESTAMP": DAY0 * 1000, "TIMEZONE": 44, "HR_RESTING": 58})

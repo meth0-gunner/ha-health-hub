@@ -82,7 +82,7 @@ TABLES: tuple[TableSpec, ...] = (
     TableSpec(
         name="XIAOMI_SLEEP_TIME_SAMPLE",
         ts_column="TIMESTAMP",
-        ts_unit=UNIT_MS,
+        ts_unit=UNIT_MS,  # confirmed 27 Oct 2026; durations are minutes
         columns=(
             "TIMESTAMP",
             "DEVICE_ID",
@@ -189,6 +189,19 @@ def _in_range(value: Any, low: int, high: int) -> int | None:
     return value
 
 
+def _standing_hours(value: Any) -> int | None:
+    """STANDING is a bitmask with one bit per hour of the day; count the hours."""
+    value = _int(value)
+    if value is None or value < 0:
+        return None
+    return bin(value & 0xFFFFFF).count("1")
+
+
+# Sleep stage codes in XIAOMI_SLEEP_STAGE_SAMPLE, confirmed 27 Oct 2026 by
+# matching a night's stage timeline against its per-stage totals.
+SLEEP_STAGES = {2: "deep", 3: "light", 4: "rem", 5: "awake"}
+
+
 def _non_negative(value: Any) -> int:
     value = _int(value)
     return value if value is not None and value > 0 else 0
@@ -236,7 +249,7 @@ def normalise_row(spec: TableSpec, row: dict[str, Any]) -> dict[str, Any] | None
             "spo2_avg": _in_range(row.get("SPO2_AVG"), 70, 100),
             "spo2_min": _in_range(row.get("SPO2_MIN"), 70, 100),
             "spo2_max": _in_range(row.get("SPO2_MAX"), 70, 100),
-            "standing": _int(row.get("STANDING")),
+            "standing": _standing_hours(row.get("STANDING")),
             "calories": _int(row.get("CALORIES")),
             "active_calories": _int(row.get("ACTIVE_CALORIES")),
             "training_load_day": _int(row.get("TRAINING_LOAD_DAY")),

@@ -10,8 +10,8 @@ confirmed but some value meanings still need real readings (marked *to confirm*)
 |---|---|---|---|
 | `XIAOMI_ACTIVITY_SAMPLE` | seconds | minute | steps, distance (cm), active calories, heart rate, stress, SpO2 |
 | `XIAOMI_DAILY_SUMMARY_SAMPLE` | milliseconds, local midnight | day (rewritten during the day) | resting HR, HR min/max/avg, stress and SpO2 summaries, standing, calories, vitality, training load |
-| `XIAOMI_SLEEP_TIME_SAMPLE` | milliseconds (*to confirm*) | sleep session | bed and wake times, minutes per stage |
-| `XIAOMI_SLEEP_STAGE_SAMPLE` | milliseconds (*to confirm*) | stage change | sleep stage timeline (stage codes *to confirm*) |
+| `XIAOMI_SLEEP_TIME_SAMPLE` | milliseconds | sleep session | bed and wake times; total, deep, light, REM and awake minutes (total excludes awake) |
+| `XIAOMI_SLEEP_STAGE_SAMPLE` | milliseconds | stage change | sleep stage timeline: 2 deep, 3 light, 4 REM, 5 awake |
 | `XIAOMI_MANUAL_SAMPLE` | milliseconds (*to confirm*) | spot check | measurements taken on the band (type codes *to confirm*) |
 | `BATTERY_LEVEL` | **seconds** | reading | band battery |
 | `BASE_ACTIVITY_SUMMARY` | milliseconds (`START_TIME`) | workout | workout type, times, summary JSON (partial support in Gadgetbridge) |
@@ -19,6 +19,18 @@ confirmed but some value meanings still need real readings (marked *to confirm*)
 
 Timestamps are converted by size as well as by the declared unit, so a wrong
 guess about seconds versus milliseconds cannot corrupt times.
+
+## Confirmed with a night's real data (27 October 2026)
+
+- Sleep stage codes: 2 deep, 3 light, 4 REM, 5 awake (each stage's minutes in
+  the timeline matched the session totals within a few minutes).
+- `STANDING` in the daily summary is a bitmask, one bit per hour of the day in
+  which you stood; Health Hub stores the number of hours.
+- `CALORIES` and `ACTIVE_CALORIES` in the daily summary are the same value
+  (active calories only, no resting metabolism), and match the minute samples.
+- Daily step totals match the sum of the minute samples.
+- Heart rate is sampled at the band's configured interval (about every other
+  minute by day, every minute overnight by default); stress and SpO2 less often.
 
 ## Conventions
 
