@@ -7,7 +7,7 @@ import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from homeassistant.components.recorder.models import (
@@ -30,9 +30,12 @@ from .const import (
     SIGNAL_UPDATED,
     STORE_FILE,
 )
+from .core import settings as settings_mod
+from .core import training as training_mod
 from .core.history import History
+from .core.metrics import Calculator
 from .core.protocol import Batch, build_plan, parse_batch
-from .core.stats import STATS_BY_KEY, rows_for_change, rows_for_full_rebuild
+from .core.stats import STATS_BY_KEY, daily_rows, rows_for_change, rows_for_full_rebuild
 from .core.store import Store
 
 _LOGGER = logging.getLogger(__name__)
@@ -56,6 +59,11 @@ class Snapshot:
     last_reading_ts: int | None = None
     last_sync: datetime | None = None
     sync_state: dict[str, Any] = field(default_factory=dict)
+    readiness: dict[str, Any] | None = None
+    day_load: dict[str, Any] | None = None
+    energy: dict[str, Any] | None = None
+    sleep_score: dict[str, Any] | None = None
+    rewards: int | None = None
 
 
 class HealthHub:
@@ -63,6 +71,7 @@ class HealthHub:
         self.hass = hass
         self.entry = entry
         self.store = store
+        self.calc = Calculator(store, dt_util.get_default_time_zone())
         self.snapshot = Snapshot()
         self._lock = asyncio.Lock()
         self.on_sleep_synced: Callable[[], None] | None = None
@@ -111,6 +120,8 @@ class HealthHub:
             self.store.upsert_devices(batch.devices)
         result = self.store.ingest(batch.spec.kind, batch.rows)
         self.store.advance_cursor(batch.spec.name, batch.max_ts, batch.raw_count)
+        if result.rows:
+            self.calc.invalidate(result.min_ts, result.max_ts)
         return result
 
     # ------------------------------------------------------------ statistics
@@ -128,6 +139,7 @@ class HealthHub:
         """Store imported history (e.g. Fitbit) and rewrite every statistic."""
         async with self._lock:
             counts = await self.hass.async_add_executor_job(self.store.import_history, history)
+        self.calc.invalidate()
         await self.async_rebuild_statistics()
         await self.async_refresh()
         _LOGGER.info("Imported %s history: %s", history.source, counts)
@@ -193,4 +205,67 @@ class HealthHub:
             last_reading_ts=s.latest_sample_ts(),
             last_sync=dt_util.utc_from_timestamp(max(batches)) if batches else None,
             sync_state=sync_state,
+            **self._scores_blocking(),
         )
+
+    def _scores_blocking(self) -> dict[str, Any]:
+        """Today's readiness, load, energy and last night's sleep score, for sensors."""
+        try:
+            settings = settings_mod.load(self.store)
+            today = dt_util.now().date()
+            rows = self.calc.days(today - timedelta(days=1), today, settings)
+            row, prev = rows[-1], rows[-2]
+            energy = self.calc.energy(today, row, prev, settings.effective_max_hr)
+            balance = sum(r["delta"] for r in self.store.rewards_ledger())
+        except Exception:  # noqa: BLE001 - sensors must never break the sync
+            _LOGGER.exception("Could not work out today's scores")
+            return {}
+        night = row["night"]
+        return {
+            "readiness": {"score": row["readiness"], "label": row["readiness_label"],
+                          "summary": (row["readiness_detail"] or {}).get("summary")} if row["readiness"] is not None else None,
+            "day_load": {"score": row["load"], "range": row["load_range"], "active_min": row["active_min"]}
+            if row["load"] is not None else None,
+            "energy": {"now": energy["now"], "peak": energy["peak"]} if energy else None,
+            "sleep_score": {"score": night["score"], "label": night["score_label"], "date": row["date"]} if night else None,
+            "rewards": balance,
+        }
+
+    # ------------------------------------------------------- Health page
+
+    def settings(self) -> settings_mod.Settings:
+        return settings_mod.load(self.store)
+
+    async def async_update_settings(self, changes: dict[str, Any]) -> settings_mod.Settings:
+        new = await self.hass.async_add_executor_job(settings_mod.update, self.store, changes)
+        await self.async_refresh()
+        return new
+
+    async def async_log_training(self, day: date, kind: str, variant: str | None) -> int:
+        log_id = await self.hass.async_add_executor_job(training_mod.log, self.store, day, kind, variant)
+        await self.async_refresh()
+        return log_id
+
+    async def async_undo_training(self, log_id: int) -> bool:
+        done = await self.hass.async_add_executor_job(self.store.remove_training, log_id)
+        await self.async_refresh()
+        return done
+
+    async def async_spend_reward(self) -> None:
+        await self.hass.async_add_executor_job(training_mod.spend, self.store)
+        await self.async_refresh()
+
+    async def async_log_weight(self, kg: float, ts: int) -> None:
+        await self.hass.async_add_executor_job(self.store.add_measurement, ts, "weight", kg, "manual")
+        await self._async_write_weight()
+
+    async def async_delete_weight(self, ts: int) -> bool:
+        done = await self.hass.async_add_executor_job(self.store.delete_measurement, ts, "weight", "manual")
+        await self._async_write_weight()
+        return done
+
+    async def _async_write_weight(self) -> None:
+        tz = dt_util.get_default_time_zone()
+        rows = await self.hass.async_add_executor_job(daily_rows, self.store, tz)
+        self._submit_statistics({"weight": rows["weight"]})
+        await self.async_refresh()

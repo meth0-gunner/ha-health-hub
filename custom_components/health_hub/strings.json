@@ -58,6 +58,34 @@
     "request_review": {
       "name": "Review now",
       "description": "Asks the Health Hub Reviewer add-on for a fresh daily review straight away."
+    },
+    "log_weight": {
+      "name": "Log weight",
+      "description": "Adds a weigh-in for now.",
+      "fields": {
+        "weight": {
+          "name": "Weight",
+          "description": "In kilograms."
+        }
+      }
+    },
+    "log_training": {
+      "name": "Log training",
+      "description": "Logs one gym or Compex session for today.",
+      "fields": {
+        "kind": {
+          "name": "Kind",
+          "description": "gym or compex."
+        },
+        "variant": {
+          "name": "Gym session",
+          "description": "push, pull or legs (gym only)."
+        }
+      }
+    },
+    "spend_reward": {
+      "name": "Spend a reward",
+      "description": "Takes one reward off the balance."
     }
   },
   "entity": {

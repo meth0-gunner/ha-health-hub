@@ -1,2 +1,31 @@
 rebuild_statistics:
 request_review:
+log_weight:
+  fields:
+    weight:
+      required: true
+      example: 88.4
+      selector:
+        number:
+          min: 20
+          max: 400
+          step: 0.1
+          unit_of_measurement: kg
+          mode: box
+log_training:
+  fields:
+    kind:
+      required: true
+      selector:
+        select:
+          options:
+            - gym
+            - compex
+    variant:
+      selector:
+        select:
+          options:
+            - push
+            - pull
+            - legs
+spend_reward:

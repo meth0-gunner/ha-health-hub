@@ -13,6 +13,7 @@ run in an executor from Home Assistant's event loop.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import threading
 import time
@@ -20,7 +21,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 HOUR = 3600
 
 # Imported sleep sessions (Fitbit history and the like) use this device id, so
@@ -112,6 +113,19 @@ CREATE TABLE IF NOT EXISTS reviews (
     review_json TEXT, error TEXT, meta_json TEXT
 );
 CREATE INDEX IF NOT EXISTS reviews_day ON reviews (day);
+
+-- One-tap training logs (gym push/pull/legs, Compex). Undo marks them removed.
+CREATE TABLE IF NOT EXISTS training_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, day TEXT NOT NULL, ts INTEGER NOT NULL,
+    kind TEXT NOT NULL, variant TEXT, removed INTEGER
+);
+CREATE INDEX IF NOT EXISTS training_log_day ON training_log (day);
+
+-- Rewards earned (+) and spent (-). Earned rows name the block they were for.
+CREATE TABLE IF NOT EXISTS rewards (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, delta INTEGER NOT NULL,
+    reason TEXT, block_start TEXT
+);
 
 CREATE TABLE IF NOT EXISTS sync_state (
     table_name TEXT PRIMARY KEY,
@@ -474,6 +488,138 @@ class Store:
                 (start_ts, end_ts),
             ).fetchone()
         return dict(row)
+
+    # --------------------------------------------------------------- settings
+
+    def get_meta(self, key: str) -> str | None:
+        with self._lock:
+            row = self._db.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
+        return row["value"] if row else None
+
+    def set_meta(self, key: str, value: str | None) -> None:
+        with self._lock, self._db:
+            if value is None:
+                self._db.execute("DELETE FROM meta WHERE key = ?", (key,))
+            else:
+                self._db.execute(
+                    "INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", (key, value)
+                )
+
+    # ---------------------------------------------------------- manual entry
+
+    def add_measurement(self, ts: int, metric: str, value: float, source: str = "manual") -> None:
+        with self._lock, self._db:
+            self._db.execute(
+                "INSERT OR REPLACE INTO measurements (ts, metric, value, source) VALUES (?, ?, ?, ?)",
+                (ts, metric, value, source),
+            )
+
+    def delete_measurement(self, ts: int, metric: str, source: str = "manual") -> bool:
+        with self._lock, self._db:
+            cur = self._db.execute(
+                "DELETE FROM measurements WHERE ts = ? AND metric = ? AND source = ?",
+                (ts, metric, source),
+            )
+        return cur.rowcount > 0
+
+    def measurements(self, metric: str) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT ts, value, source FROM measurements WHERE metric = ? AND value IS NOT NULL"
+                " ORDER BY ts",
+                (metric,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    # --------------------------------------------------------------- training
+
+    def add_training(self, day: str, ts: int, kind: str, variant: str | None) -> int:
+        with self._lock, self._db:
+            cur = self._db.execute(
+                "INSERT INTO training_log (day, ts, kind, variant) VALUES (?, ?, ?, ?)",
+                (day, ts, kind, variant),
+            )
+        return int(cur.lastrowid)
+
+    def remove_training(self, log_id: int) -> bool:
+        with self._lock, self._db:
+            cur = self._db.execute(
+                "UPDATE training_log SET removed = 1 WHERE id = ? AND removed IS NULL", (log_id,)
+            )
+        return cur.rowcount > 0
+
+    def training_between(self, first_day: str, last_day: str) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT id, day, ts, kind, variant FROM training_log"
+                " WHERE removed IS NULL AND day >= ? AND day <= ? ORDER BY day, ts, id",
+                (first_day, last_day),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def rewards_ledger(self) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._db.execute("SELECT * FROM rewards ORDER BY ts, id").fetchall()
+        return [dict(r) for r in rows]
+
+    def add_reward(self, ts: int, delta: int, reason: str, block_start: str | None = None) -> None:
+        with self._lock, self._db:
+            self._db.execute(
+                "INSERT INTO rewards (ts, delta, reason, block_start) VALUES (?, ?, ?, ?)",
+                (ts, delta, reason, block_start),
+            )
+
+    def update_block_reward(self, block_start: str, delta: int, reason: str) -> None:
+        with self._lock, self._db:
+            self._db.execute(
+                "UPDATE rewards SET delta = ?, reason = ? WHERE block_start = ?",
+                (delta, reason, block_start),
+            )
+
+    def minutes_between(self, start_ts: int, end_ts: int) -> list[sqlite3.Row]:
+        """Every minute sample in a stretch of time (band data only)."""
+        with self._lock:
+            return self._db.execute(
+                "SELECT ts, steps, heart_rate, stress, spo2, active_calories, distance_cm"
+                " FROM minute_samples WHERE ts >= ? AND ts < ? ORDER BY ts",
+                (start_ts, end_ts),
+            ).fetchall()
+
+    def stages_between(self, start_ts: int, end_ts: int) -> list[tuple[int, int]]:
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT ts, stage FROM sleep_stages WHERE ts >= ? AND ts < ? ORDER BY ts",
+                (start_ts, end_ts),
+            ).fetchall()
+        return [(r["ts"], r["stage"]) for r in rows]
+
+    def hourly_between(self, start_ts: int, end_ts: int) -> list[sqlite3.Row]:
+        with self._lock:
+            return self._db.execute(
+                "SELECT * FROM hourly WHERE hour_ts >= ? AND hour_ts < ? ORDER BY hour_ts",
+                (start_ts, end_ts),
+            ).fetchall()
+
+    def daily_between(self, start_ts: int, end_ts: int) -> list[sqlite3.Row]:
+        with self._lock:
+            return self._db.execute(
+                "SELECT * FROM daily_summary WHERE ts >= ? AND ts < ? ORDER BY ts",
+                (start_ts, end_ts),
+            ).fetchall()
+
+    def sleep_sessions_between(self, start_ts: int, end_ts: int) -> list[sqlite3.Row]:
+        """Sessions that ended in a stretch of time."""
+        with self._lock:
+            return self._db.execute(
+                "SELECT * FROM sleep_sessions WHERE COALESCE(wakeup_ts, ts) >= ?"
+                " AND COALESCE(wakeup_ts, ts) < ? ORDER BY ts",
+                (start_ts, end_ts),
+            ).fetchall()
+
+    def first_data_ts(self) -> int | None:
+        with self._lock:
+            row = self._db.execute("SELECT MIN(hour_ts) AS ts FROM hourly").fetchone()
+        return row["ts"]
 
     # ---------------------------------------------------------------- reviews
 

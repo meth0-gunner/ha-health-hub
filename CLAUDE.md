@@ -30,6 +30,14 @@ explain in plain terms, he installs things, Claude writes and pushes code).
   `--strict-mcp-config`). Only `core/review.py`'s summary of figures is sent.
   Bump the add-on's `version` in its config.yaml when it changes, or HA won't
   offer the update. `addon.yml` test-builds it for amd64 and aarch64.
+- Health page: `frontend/` (plain ES modules, no build step, no libraries,
+  hand-drawn SVG) served at `/health_hub_static/<version>/`, registered as an
+  admin-only panel. Its data comes from `panel_api.py` commands built on
+  `core/metrics.py` (scores), `core/views.py` (page payloads), `core/training.py`
+  (blocks and rewards), `core/settings.py` and `core/sources.py` (cited sources;
+  add one only after opening it). Preview without HA:
+  `python3 tools/panel_preview.py <copy of health_hub.db>` and take screenshots
+  with Playwright before releasing.
 - Target current Home Assistant (statistics metadata uses `mean_type` and
   `unit_class`; `has_mean` is gone).
 

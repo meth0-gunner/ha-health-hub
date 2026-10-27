@@ -5,7 +5,9 @@
   "config_flow": true,
   "dependencies": [
     "file_upload",
+    "frontend",
     "http",
+    "panel_custom",
     "recorder",
     "websocket_api"
   ],
@@ -15,5 +17,5 @@
   "issue_tracker": "https://github.com/meth0-gunner/ha-health-hub/issues",
   "requirements": [],
   "single_config_entry": true,
-  "version": "0.2.2"
+  "version": "0.3.0"
 }

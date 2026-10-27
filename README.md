@@ -81,6 +81,26 @@ through the websocket command `health_hub/samples`.
 **Actions** `health_hub.rebuild_statistics` rewrites every statistic from stored
 data; `health_hub.request_review` asks for a fresh daily review.
 
+## Health page
+
+A **Health** item in the sidebar (admins only) is Health Hub's own page, built
+into the integration with hand-drawn charts and no add-on cards:
+
+- **Overview**: readiness, day load and energy; the daily review; goals with
+  streaks; one-tap gym (Push, Pull, Legs) and Compex logging with 4-week blocks
+  and rewards; highlights; today at a glance; last night.
+- **Sleep**, **Readiness**, **Activity & load**, **Heart**, **Stress & energy**,
+  **Body** (weigh-ins and goal), **Training** (calendar, past blocks, rewards
+  history) and **Settings** (goals and targets).
+- Day, Week, Month, Year or a custom range, and ‹ › to step through them.
+
+Every score and statement is worked out from your own data with a stated rule;
+"Why?" shows the rule, your numbers and, for published thresholds, the source.
+
+Readiness, sleep score, day load and energy are Health Hub's own calculations
+(`core/metrics.py`); the band's readings are estimates, not medical
+measurements.
+
 ## Daily review
 
 Each morning, once last night's sleep has synced, Health Hub asks Claude for a
@@ -137,7 +157,7 @@ The endpoints need an **admin** user's access token.
 - [x] Phone app: export folder, hourly background sync, sync now, status
 - [x] Fitbit history import
 - [x] Daily review with Claude (Reviewer add-on)
-- [ ] Dashboards, goals and streaks
+- [x] Health page: scores, goals and streaks, training and rewards, weight
 - [ ] Automations: morning summary, alerts
 - [ ] Presence via the band
 
