@@ -62,12 +62,12 @@ The endpoints need an **admin** user's access token.
 | `tools/sync_export.py` | Sends an export from a PC; same logic as the phone app (standard library only) |
 | `tests/` | Tests, including a full Home Assistant instance receiving a synthetic export |
 | `docs/` | Notes on Gadgetbridge's data |
-| `android/` | Phone app (coming next) |
+| `android/` | Phone app (built by GitHub Actions; signed APKs appear under Releases) |
 
 ## Status
 
 - [x] Integration: sync endpoints, store, statistics, sensors, dashboard data command
-- [ ] Phone app
+- [x] Phone app: export folder, hourly background sync, sync now, status
 - [ ] Fitbit history import
 - [ ] Dashboards, goals and streaks
 - [ ] Automations: morning summary, alerts
