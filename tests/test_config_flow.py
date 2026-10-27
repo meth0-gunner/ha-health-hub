@@ -25,6 +25,10 @@ async def test_add_then_options(recorder_mock, enable_custom_integrations, hass:
 
     entry = hass.config_entries.async_entries(DOMAIN)[0]
     options = await hass.config_entries.options.async_init(entry.entry_id)
+    assert options["type"] is FlowResultType.MENU
+    options = await hass.config_entries.options.async_configure(
+        options["flow_id"], {"next_step_id": "settings"}
+    )
     options = await hass.config_entries.options.async_configure(
         options["flow_id"], {CONF_RETENTION_DAYS: 120, "overlap_hours": 24}
     )

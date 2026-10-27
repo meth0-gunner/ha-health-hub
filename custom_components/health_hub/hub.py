@@ -29,6 +29,7 @@ from .const import (
     SIGNAL_UPDATED,
     STORE_FILE,
 )
+from .core.history import History
 from .core.protocol import Batch, build_plan, parse_batch
 from .core.stats import STATS_BY_KEY, rows_for_change, rows_for_full_rebuild
 from .core.store import Store
@@ -117,6 +118,15 @@ class HealthHub:
             rows_for_change, self.store, kind, min_ts, tz
         )
         self._submit_statistics(rows)
+
+    async def async_import_history(self, history: History) -> dict[str, int]:
+        """Store imported history (e.g. Fitbit) and rewrite every statistic."""
+        async with self._lock:
+            counts = await self.hass.async_add_executor_job(self.store.import_history, history)
+        await self.async_rebuild_statistics()
+        await self.async_refresh()
+        _LOGGER.info("Imported %s history: %s", history.source, counts)
+        return counts
 
     async def async_rebuild_statistics(self) -> None:
         """Rewrite every statistic from the store (service call)."""

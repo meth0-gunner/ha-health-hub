@@ -20,8 +20,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 HOUR = 3600
+
+# Imported sleep sessions (Fitbit history and the like) use this device id, so
+# the band's own sessions can be preferred on nights both recorded.
+IMPORT_DEVICE_ID = -1
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
@@ -63,8 +67,20 @@ CREATE TABLE IF NOT EXISTS daily_summary (
 CREATE TABLE IF NOT EXISTS sleep_sessions (
     device_id INTEGER NOT NULL, ts INTEGER NOT NULL, wakeup_ts INTEGER,
     is_awake INTEGER, total_min INTEGER, deep_min INTEGER, light_min INTEGER,
-    rem_min INTEGER, awake_min INTEGER,
+    rem_min INTEGER, awake_min INTEGER, score REAL,
     PRIMARY KEY (device_id, ts)
+) WITHOUT ROWID;
+
+-- One value per calendar day from imported history (resting HR, HRV, ...).
+CREATE TABLE IF NOT EXISTS daily_metrics (
+    day TEXT NOT NULL, metric TEXT NOT NULL, value REAL, source TEXT NOT NULL,
+    PRIMARY KEY (day, metric, source)
+) WITHOUT ROWID;
+
+-- Point-in-time measurements such as weigh-ins.
+CREATE TABLE IF NOT EXISTS measurements (
+    ts INTEGER NOT NULL, metric TEXT NOT NULL, value REAL, source TEXT NOT NULL,
+    PRIMARY KEY (ts, metric, source)
 ) WITHOUT ROWID;
 
 CREATE TABLE IF NOT EXISTS sleep_stages (
@@ -146,10 +162,17 @@ class Store:
         with self._lock, self._db:
             self._db.execute("PRAGMA journal_mode=WAL")
             self._db.executescript(_SCHEMA)
+            self._migrate()
             self._db.execute(
-                "INSERT OR IGNORE INTO meta (key, value) VALUES ('schema_version', ?)",
+                "INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', ?)",
                 (str(SCHEMA_VERSION),),
             )
+
+    def _migrate(self) -> None:
+        """Bring a store created by an older version up to date."""
+        columns = {r["name"] for r in self._db.execute("PRAGMA table_info(sleep_sessions)")}
+        if "score" not in columns:  # added in schema 2
+            self._db.execute("ALTER TABLE sleep_sessions ADD COLUMN score REAL")
 
     def close(self) -> None:
         with self._lock:
@@ -238,6 +261,52 @@ class Store:
                     ),
                 )
 
+    def import_history(self, history: Any) -> dict[str, int]:
+        """Store an imported history (core.history.History).
+
+        Hours the band itself recorded keep the band's data. Importing the same
+        file again replaces the earlier import rather than adding to it.
+        """
+        source = history.source
+        hourly_cols = (
+            "hour_ts", "steps", "distance_m", "active_calories",
+            "hr_mean", "hr_min", "hr_max", "hr_n",
+            "spo2_mean", "spo2_min", "spo2_max", "spo2_n",
+        )
+        updates = ", ".join(f"{c} = excluded.{c}" for c in hourly_cols[1:])
+        with self._lock, self._db:
+            self._db.executemany(
+                f"INSERT INTO hourly ({', '.join(hourly_cols)}, source)"
+                f" VALUES ({', '.join('?' * len(hourly_cols))}, ?)"
+                f" ON CONFLICT(hour_ts) DO UPDATE SET {updates}, source = excluded.source"
+                " WHERE hourly.source = excluded.source",
+                [tuple(h.get(c) for c in hourly_cols) + (source,) for h in history.hourly],
+            )
+            self._db.executemany(
+                "INSERT OR REPLACE INTO daily_metrics (day, metric, value, source) VALUES (?, ?, ?, ?)",
+                [(day, metric, value, source) for metric, day, value in history.daily],
+            )
+            self._db.executemany(
+                "INSERT OR REPLACE INTO measurements (ts, metric, value, source) VALUES (?, ?, ?, ?)",
+                [(ts, metric, value, source) for metric, ts, value in history.measurements],
+            )
+            self._db.executemany(
+                "INSERT OR REPLACE INTO sleep_sessions (device_id, ts, wakeup_ts, is_awake,"
+                " total_min, deep_min, light_min, rem_min, awake_min, score)"
+                " VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?)",
+                [
+                    (IMPORT_DEVICE_ID, s["start_ts"], s["end_ts"], s["total_min"], s["deep_min"],
+                     s["light_min"], s["rem_min"], s["awake_min"], s["score"])
+                    for s in history.sleep
+                ],
+            )
+        return {
+            "hours": len(history.hourly),
+            "days": len({d for _m, d, _v in history.daily}),
+            "sleeps": len(history.sleep),
+            "measurements": len(history.measurements),
+        }
+
     def purge_detail(self, older_than_ts: int) -> int:
         """Delete detail rows older than the cut-off. Returns rows removed."""
         removed = 0
@@ -300,6 +369,25 @@ class Store:
             return self._db.execute(
                 "SELECT * FROM sleep_sessions WHERE ts >= ? ORDER BY ts", (start_ts,)
             ).fetchall()
+
+    def daily_metric(self, metric: str) -> list[tuple[str, float]]:
+        """(YYYY-MM-DD, value) for an imported daily metric, oldest first."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT day, value FROM daily_metrics WHERE metric = ? AND value IS NOT NULL"
+                " ORDER BY day",
+                (metric,),
+            ).fetchall()
+        return [(r["day"], r["value"]) for r in rows]
+
+    def measurement_series(self, metric: str) -> list[tuple[int, float]]:
+        """(timestamp, value) for a measurement such as weight, oldest first."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT ts, value FROM measurements WHERE metric = ? AND value IS NOT NULL ORDER BY ts",
+                (metric,),
+            ).fetchall()
+        return [(r["ts"], r["value"]) for r in rows]
 
     def totals_between(self, start_ts: int, end_ts: int) -> dict[str, Any]:
         """Steps, distance and active calories between two times, from minute samples."""

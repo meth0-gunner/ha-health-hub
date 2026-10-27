@@ -13,7 +13,14 @@
   "options": {
     "step": {
       "init": {
-        "title": "Health Hub options",
+        "title": "Health Hub",
+        "menu_options": {
+          "settings": "Settings",
+          "import_history": "Import history (for example from Fitbit)"
+        }
+      },
+      "settings": {
+        "title": "Health Hub settings",
         "data": {
           "retention_days": "Days of minute-level detail to keep",
           "overlap_hours": "Hours of recent data to re-check on each sync"
@@ -22,7 +29,21 @@
           "retention_days": "Hourly and daily history is kept for good; this only limits the minute-by-minute detail.",
           "overlap_hours": "Gadgetbridge updates some recent rows after the fact, so each sync re-reads this much."
         }
+      },
+      "import_history": {
+        "title": "Import history",
+        "description": "Upload a history file made with the Health Hub converter (for example fitbit-history.json.gz). Days your band recorded keep the band's data. Importing the same file again replaces the earlier import.",
+        "data": {
+          "history_file": "History file"
+        }
       }
+    },
+    "error": {
+      "invalid_file": "That isn't a Health Hub history file: {error}",
+      "unknown": "The file couldn't be imported. See the Home Assistant log for details."
+    },
+    "abort": {
+      "history_imported": "Imported {hours} hours of activity, {days} days of daily values, {sleeps} sleeps and {measurements} weigh-ins. Home Assistant writes the charts in the background; on an HA Green allow about 10 minutes."
     }
   },
   "services": {

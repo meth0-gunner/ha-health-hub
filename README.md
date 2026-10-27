@@ -27,6 +27,18 @@ Built for a Xiaomi Smart Band 8 Pro on a Pixel, with Home Assistant on an HA Gre
    home and away) and the token, tap **Save and test**, choose the export folder,
    allow background running, then **Sync now**.
 
+## Importing Fitbit history
+
+1. Download your data with Google Takeout (Fitbit / Google Health).
+2. Convert it on any computer with Python 3.11+:
+   `python3 tools/fitbit_takeout.py takeout-*.zip -o fitbit-history.json.gz`
+3. Home Assistant: Health Hub → **Configure** → **Import history** → upload the file.
+
+Steps, distance and heart rate use the tracker's own readings (phone sources are
+skipped, as the Fitbit app does). Nights Google re-analysed are counted once. The
+band's own data wins on any day both recorded, and importing again replaces the
+earlier import.
+
 ## How it works
 
 ```
@@ -57,8 +69,11 @@ score; last sleep (with stage breakdown); band battery; last sync; last reading.
 |---|---|
 | `health_hub:steps`, `health_hub:distance`, `health_hub:active_calories` | hourly totals |
 | `health_hub:heart_rate`, `health_hub:stress`, `health_hub:spo2` | hourly mean, min, max |
-| `health_hub:resting_heart_rate`, `health_hub:vitality_score` | one value per day |
-| `health_hub:sleep_duration`, `deep_sleep`, `light_sleep`, `rem_sleep`, `awake_in_bed` | hours per night, credited to the wake-up day |
+| `health_hub:resting_heart_rate`, `hrv`, `respiratory_rate`, `weight`, `vitality_score` | one value per day |
+| `health_hub:sleep_duration`, `deep_sleep`, `light_sleep`, `rem_sleep`, `awake_in_bed`, `sleep_score` | per night, credited to the wake-up day |
+
+HRV, breathing rate and sleep score come from imported Fitbit history (the band
+doesn't measure them in Gadgetbridge).
 
 **Minute-level detail** for the last 90 days (configurable), for intraday charts,
 through the websocket command `health_hub/samples`.
@@ -82,6 +97,7 @@ The endpoints need an **admin** user's access token.
 | `custom_components/health_hub/` | Home Assistant integration |
 | `custom_components/health_hub/core/` | Logic with no Home Assistant dependency: table map, store, statistics, sync protocol |
 | `tools/sync_export.py` | Sends an export from a PC; same logic as the phone app (standard library only) |
+| `tools/fitbit_takeout.py` | Converts a Google Takeout of Fitbit data into a history file to import |
 | `tests/` | Tests, including a full Home Assistant instance receiving a synthetic export |
 | `docs/` | Notes on Gadgetbridge's data |
 | `android/` | Phone app (built by GitHub Actions; signed APKs appear under Releases) |
@@ -90,7 +106,7 @@ The endpoints need an **admin** user's access token.
 
 - [x] Integration: sync endpoints, store, statistics, sensors, dashboard data command
 - [x] Phone app: export folder, hourly background sync, sync now, status
-- [ ] Fitbit history import
+- [x] Fitbit history import
 - [ ] Dashboards, goals and streaks
 - [ ] Automations: morning summary, alerts
 - [ ] Presence via the band
