@@ -43,7 +43,10 @@ STATE = DATA / "state.json"
 WORKDIR = Path(os.environ.get("HH_WORKDIR", "/tmp/health-hub-review"))
 POLL_SECONDS = float(os.environ.get("HH_POLL_SECONDS", "15"))
 
-# Everything except reading the web is switched off.
+# Claude gets the web tools and nothing else. --tools sets which tools exist at
+# all; the deny list is a second lock. --restricted ignores the settings files
+# the Claude Code add-on shares (its permissions and Home Assistant MCP server),
+# and --safe-mode skips its CLAUDE.md, hooks, plugins and skills.
 BLOCKED_TOOLS = "Bash,Edit,Write,Read,Glob,Grep,NotebookEdit,Task,TodoWrite,MultiEdit,LS"
 WEB_TOOLS = "WebSearch,WebFetch"
 MAX_RAW = 20000
@@ -149,12 +152,16 @@ def build_command(opts: dict[str, Any]) -> list[str]:
         "-p",
         "--output-format", "json",
         "--max-turns", str(opts["max_turns"]),
+        "--restricted",
+        "--safe-mode",
         "--strict-mcp-config",
     ]
+    # These options take a list, so each is passed as one "--name=value" word
+    # (a bare value after them would be read as more tool names).
     if opts["web_research"]:
-        cmd += ["--allowedTools", WEB_TOOLS, "--disallowedTools", BLOCKED_TOOLS]
+        cmd += [f"--tools={WEB_TOOLS}", f"--allowedTools={WEB_TOOLS}", f"--disallowedTools={BLOCKED_TOOLS}"]
     else:
-        cmd += ["--disallowedTools", BLOCKED_TOOLS + "," + WEB_TOOLS]
+        cmd += ["--tools=", f"--disallowedTools={BLOCKED_TOOLS},{WEB_TOOLS}"]
     if opts["model"]:
         cmd += ["--model", opts["model"]]
     return cmd

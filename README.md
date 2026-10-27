@@ -78,7 +78,34 @@ doesn't measure them in Gadgetbridge).
 **Minute-level detail** for the last 90 days (configurable), for intraday charts,
 through the websocket command `health_hub/samples`.
 
-**Service** `health_hub.rebuild_statistics` rewrites every statistic from stored data.
+**Actions** `health_hub.rebuild_statistics` rewrites every statistic from stored
+data; `health_hub.request_review` asks for a fresh daily review.
+
+## Daily review
+
+Each morning, once last night's sleep has synced, Health Hub asks Claude for a
+short review of your figures, checked against current research with web search.
+It runs on your existing Claude subscription through the **Health Hub Reviewer**
+add-on in this repository, which reuses the login of the Claude Code add-on.
+
+1. Settings → Add-ons → Add-on store → ⋮ → Repositories, add
+   `https://github.com/meth0-gunner/ha-health-hub`.
+2. Install **Health Hub Reviewer** and start it. It needs the Claude Code add-on
+   installed and signed in.
+
+Only a summary of figures is sent (nightly and daily totals, averages and
+baselines); never minute readings, names or device details. The add-on lets
+Claude search and read the web and nothing else: no files, commands or Home
+Assistant tools. Every request and answer is kept, with the summary that was sent.
+
+- **Sensors**: Daily review (headline; the full review is on the Health page)
+  and Reviewer (whether the add-on is there and signed in).
+- **Action** `health_hub.request_review` (Review now).
+- **Options**: turn the review off, or change the time it's written anyway if
+  no night has synced (10:00 by default).
+- Websocket command `health_hub/review`.
+
+If no review appears, look at the Reviewer sensor and the add-on's log.
 
 ## Privacy
 
@@ -101,12 +128,15 @@ The endpoints need an **admin** user's access token.
 | `tests/` | Tests, including a full Home Assistant instance receiving a synthetic export |
 | `docs/` | Notes on Gadgetbridge's data |
 | `android/` | Phone app (built by GitHub Actions; signed APKs appear under Releases) |
+| `health_hub_reviewer/` | Home Assistant add-on that writes the daily review with Claude Code |
+| `repository.yaml` | Makes this repository an add-on repository too |
 
 ## Status
 
 - [x] Integration: sync endpoints, store, statistics, sensors, dashboard data command
 - [x] Phone app: export folder, hourly background sync, sync now, status
 - [x] Fitbit history import
+- [x] Daily review with Claude (Reviewer add-on)
 - [ ] Dashboards, goals and streaks
 - [ ] Automations: morning summary, alerts
 - [ ] Presence via the band

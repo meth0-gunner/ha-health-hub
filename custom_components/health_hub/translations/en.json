@@ -23,11 +23,15 @@
         "title": "Health Hub settings",
         "data": {
           "retention_days": "Days of minute-level detail to keep",
-          "overlap_hours": "Hours of recent data to re-check on each sync"
+          "overlap_hours": "Hours of recent data to re-check on each sync",
+          "review_enabled": "Daily review",
+          "review_time": "Review by"
         },
         "data_description": {
           "retention_days": "Hourly and daily history is kept for good; this only limits the minute-by-minute detail.",
-          "overlap_hours": "Gadgetbridge updates some recent rows after the fact, so each sync re-reads this much."
+          "overlap_hours": "Gadgetbridge updates some recent rows after the fact, so each sync re-reads this much.",
+          "review_enabled": "Each morning, once last night's sleep has synced, ask the Health Hub Reviewer add-on for a review of your figures.",
+          "review_time": "If no night has synced by this time, the review is written anyway with what there is."
         }
       },
       "import_history": {
@@ -50,6 +54,26 @@
     "rebuild_statistics": {
       "name": "Rebuild statistics",
       "description": "Rewrites all Health Hub long-term statistics from its stored data, for example after an import or a fix."
+    },
+    "request_review": {
+      "name": "Review now",
+      "description": "Asks the Health Hub Reviewer add-on for a fresh daily review straight away."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "reviewer": {
+        "state": {
+          "ready": "Ready",
+          "running": "Writing a review",
+          "no_login": "Not signed in",
+          "offline": "Offline",
+          "error": "Error",
+          "not_installed": "Not installed",
+          "disabled": "Turned off",
+          "unknown": "Unknown"
+        }
+      }
     }
   }
 }

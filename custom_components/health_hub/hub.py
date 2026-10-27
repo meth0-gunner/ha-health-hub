@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -64,6 +65,8 @@ class HealthHub:
         self.store = store
         self.snapshot = Snapshot()
         self._lock = asyncio.Lock()
+        self.on_sleep_synced: Callable[[], None] | None = None
+        self.reviews: Any = None  # ReviewManager, set up by __init__
 
     @property
     def retention_days(self) -> int:
@@ -98,6 +101,8 @@ class HealthHub:
             if result.rows:
                 await self._async_write_statistics(batch.spec.kind, result.min_ts)
         await self.async_refresh()
+        if result.rows and batch.spec.kind == "sleep_session" and self.on_sleep_synced:
+            self.on_sleep_synced()
         cursor = await self.hass.async_add_executor_job(self.store.get_cursor, batch.spec.name)
         return {"accepted": result.rows, "received": batch.raw_count, "cursor": cursor}
 

@@ -22,6 +22,14 @@ explain in plain terms, he installs things, Claude writes and pushes code).
   release.yml tests, builds the signed APK and publishes `vX.Y.Z` (tags can't be
   pushed from Claude sessions). HACS installs from those releases.
 - Run `pytest -q` before pushing (HA test harness: `pytest-homeassistant-custom-component`).
+- The daily review goes through the Health Hub Reviewer add-on
+  (`health_hub_reviewer/`), which runs `claude -p` on the Claude Code add-on's
+  login (`/homeassistant/.claudecode`). Exchange is files in
+  `/config/health_hub/review/` (request, response, status). Claude gets only
+  WebSearch/WebFetch (`--tools`, `--restricted`, `--safe-mode`,
+  `--strict-mcp-config`). Only `core/review.py`'s summary of figures is sent.
+  Bump the add-on's `version` in its config.yaml when it changes, or HA won't
+  offer the update. `addon.yml` test-builds it for amd64 and aarch64.
 - Target current Home Assistant (statistics metadata uses `mean_type` and
   `unit_class`; `has_mean` is gone).
 

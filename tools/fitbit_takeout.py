@@ -15,7 +15,9 @@ are ignored:
 
 Steps, distance and heart rate use the Fitbit tracker's own readings. Phone and
 app sources (MobileTrack, Health Connect) are skipped, as the Fitbit app does
-when a tracker is worn, so nothing is counted twice.
+when a tracker is worn, so nothing is counted twice. Active calories have no
+tracker rows (Google works them out from the tracker as "Google Health App"),
+so for those only the phone's copies are skipped.
 
 Standard library only; Python 3.11 or newer.
 """
@@ -39,12 +41,8 @@ VERSION = 1
 
 # Sources that are not the tracker itself. Their steps, distance and heart rate
 # duplicate the tracker's on days it was worn.
-NON_TRACKER_SOURCES = {
-    "MobileTrack",
-    "Phone Health Connect",
-    "Fit Health Connect",
-    "Google Health App",
-}
+PHONE_SOURCES = {"MobileTrack", "Phone Health Connect", "Fit Health Connect"}
+NON_TRACKER_SOURCES = PHONE_SOURCES | {"Google Health App"}
 
 HOURLY_COLUMNS = [
     "hour_ts", "steps", "distance_m", "active_calories",
@@ -143,7 +141,7 @@ class Converter:
 
     def _read_active_calories(self, rows) -> None:
         for row in rows:
-            if row.get("timestamp"):
+            if row.get("timestamp") and row.get("data source") not in PHONE_SOURCES:
                 self.hours[row["timestamp"][:13]].active_kcal += _float(row["Kilocalories"]) or 0
 
     def _per_minute(self, rows, column: str, low: float, high: float, tracker_only: bool):

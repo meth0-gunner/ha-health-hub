@@ -57,6 +57,7 @@ def make_takeout(path: Path) -> Path:
             "timestamp,Kilocalories,data source",
             "2025-06-01T00:10:00Z,3.4,Google Health App",
             "2025-06-01T00:11:00Z,4.0,Google Health App",
+            "2025-06-01T00:11:30Z,5.0,Phone Health Connect",
         ),
         ACT + "Daily Resting Heart Rate/daily_resting_heart_rate.csv": _csv(
             "timestamp,beats per minute,data source",
@@ -130,7 +131,7 @@ def test_convert(tmp_path):
     h0 = hours[_epoch("2025-06-01T00:00:00Z")]
     assert h0["steps"] == 100  # phone's 38 ignored
     assert h0["distance_m"] == 30.5
-    assert h0["active_calories"] == 7
+    assert h0["active_calories"] == 7  # phone's 5 ignored
     assert (h0["hr_mean"], h0["hr_min"], h0["hr_max"], h0["hr_n"]) == (80.0, 70, 90, 2)
     assert (h0["spo2_mean"], h0["spo2_n"]) == (97.0, 2)
     assert hours[_epoch("2025-06-01T01:00:00Z")]["steps"] == 5

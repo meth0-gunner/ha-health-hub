@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 HOUR = 3600
 
 # Imported sleep sessions (Fitbit history and the like) use this device id, so
@@ -104,6 +104,14 @@ CREATE TABLE IF NOT EXISTS workouts (
     end_ts INTEGER, kind INTEGER, name TEXT, summary_json TEXT,
     PRIMARY KEY (device_id, workout_id)
 ) WITHOUT ROWID;
+
+-- Daily reviews: what was asked (the summary) and what came back.
+CREATE TABLE IF NOT EXISTS reviews (
+    id TEXT PRIMARY KEY, day TEXT NOT NULL, requested INTEGER NOT NULL,
+    reason TEXT, summary_json TEXT, finished INTEGER, status TEXT,
+    review_json TEXT, error TEXT, meta_json TEXT
+);
+CREATE INDEX IF NOT EXISTS reviews_day ON reviews (day);
 
 CREATE TABLE IF NOT EXISTS sync_state (
     table_name TEXT PRIMARY KEY,
@@ -449,6 +457,79 @@ class Store:
                 (start_ts, end_ts),
             ).fetchall()
         return [(r["ts"], r["v"]) for r in rows]
+
+    def window_stats(self, start_ts: int, end_ts: int) -> dict[str, Any]:
+        """Heart rate, stress and SpO2 figures for a stretch of time (e.g. a night)."""
+        with self._lock:
+            row = self._db.execute(
+                """
+                SELECT MIN(heart_rate) AS hr_min, AVG(heart_rate) AS hr_avg,
+                       COUNT(heart_rate) AS hr_n,
+                       AVG(stress) AS stress_avg, COUNT(stress) AS stress_n,
+                       AVG(spo2) AS spo2_avg, MIN(spo2) AS spo2_min,
+                       COUNT(spo2) AS spo2_n,
+                       COALESCE(SUM(CASE WHEN spo2 < 90 THEN 1 ELSE 0 END), 0) AS spo2_below_90
+                FROM minute_samples WHERE ts >= ? AND ts < ?
+                """,
+                (start_ts, end_ts),
+            ).fetchone()
+        return dict(row)
+
+    # ---------------------------------------------------------------- reviews
+
+    def add_review_request(
+        self, review_id: str, day: str, requested: int, reason: str, summary_json: str
+    ) -> None:
+        with self._lock, self._db:
+            self._db.execute(
+                "INSERT OR REPLACE INTO reviews (id, day, requested, reason, summary_json, status)"
+                " VALUES (?, ?, ?, ?, ?, 'pending')",
+                (review_id, day, requested, reason, summary_json),
+            )
+
+    def complete_review(
+        self,
+        review_id: str,
+        finished: int,
+        status: str,
+        review_json: str | None,
+        error: str | None,
+        meta_json: str | None,
+    ) -> bool:
+        """Record a review's outcome. False if no such request was made."""
+        with self._lock, self._db:
+            cur = self._db.execute(
+                "UPDATE reviews SET finished = ?, status = ?, review_json = ?, error = ?,"
+                " meta_json = ? WHERE id = ?",
+                (finished, status, review_json, error, meta_json, review_id),
+            )
+        return cur.rowcount > 0
+
+    def get_review(self, review_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._db.execute("SELECT * FROM reviews WHERE id = ?", (review_id,)).fetchone()
+        return dict(row) if row else None
+
+    def latest_review(self, status: str | None = None, day: str | None = None) -> dict[str, Any] | None:
+        sql, args = "SELECT * FROM reviews WHERE 1 = 1", []
+        if status:
+            sql += " AND status = ?"
+            args.append(status)
+        if day:
+            sql += " AND day = ?"
+            args.append(day)
+        with self._lock:
+            row = self._db.execute(sql + " ORDER BY requested DESC LIMIT 1", args).fetchone()
+        return dict(row) if row else None
+
+    def review_history(self, limit: int = 60) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT id, day, requested, reason, finished, status, error, review_json"
+                " FROM reviews ORDER BY requested DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [dict(r) for r in rows]
 
     def sync_state(self) -> dict[str, dict[str, Any]]:
         with self._lock:

@@ -3,12 +3,14 @@
     GET  /api/health_hub/sync/plan   what to send, and from when
     POST /api/health_hub/sync/batch  one batch of rows
 
-Both need an admin user's access token. The websocket command
-`health_hub/samples` returns minute-level readings for charts.
+Both need an admin user's access token. Websocket commands (admin only):
+`health_hub/samples` returns minute-level readings for charts, and
+`health_hub/review` the daily review (latest, a given one, or the history).
 """
 
 from __future__ import annotations
 
+import json
 import logging
 from http import HTTPStatus
 from typing import TYPE_CHECKING, Any
@@ -113,8 +115,50 @@ async def ws_samples(
     connection.send_result(msg["id"], {"points": [[ts * 1000, v] for ts, v in points]})
 
 
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "health_hub/review",
+        vol.Optional("review_id"): str,
+        vol.Optional("history", default=False): bool,
+    }
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_review(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """The latest review and the reviewer's state; or one review; or the list."""
+    hub = _hub(hass)
+    if hub is None:
+        connection.send_error(msg["id"], "not_loaded", "Health Hub is not loaded")
+        return
+    reviews = hub.reviews
+    result = reviews.overview()
+    if "review_id" in msg:
+        row = await hass.async_add_executor_job(hub.store.get_review, msg["review_id"])
+        if row is None:
+            connection.send_error(msg["id"], "not_found", "No such review")
+            return
+        result["review"] = reviews.as_dict(row)
+    if msg["history"]:
+        rows = await hass.async_add_executor_job(hub.store.review_history)
+        result["history"] = [
+            {
+                "id": r["id"],
+                "day": r["day"],
+                "status": r["status"],
+                "reason": r["reason"],
+                "error": r["error"],
+                "headline": json.loads(r["review_json"]).get("headline") if r["review_json"] else None,
+            }
+            for r in rows
+        ]
+    connection.send_result(msg["id"], result)
+
+
 @callback
 def async_register_api(hass: HomeAssistant) -> None:
     hass.http.register_view(SyncPlanView())
     hass.http.register_view(SyncBatchView())
     websocket_api.async_register_command(hass, ws_samples)
+    websocket_api.async_register_command(hass, ws_review)

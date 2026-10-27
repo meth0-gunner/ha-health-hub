@@ -26,7 +26,8 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.util import dt as dt_util
 
 from . import HealthHubConfigEntry
-from .const import DOMAIN, NAME, SIGNAL_UPDATED
+from .const import DOMAIN, NAME, SIGNAL_REVIEW, SIGNAL_UPDATED
+from .core.review import attention_label
 from .hub import Snapshot
 
 
@@ -183,7 +184,18 @@ async def async_setup_entry(
     entry: HealthHubConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    async_add_entities(HealthSensor(entry, d) for d in SENSORS)
+    async_add_entities(
+        [*(HealthSensor(entry, d) for d in SENSORS), DailyReviewSensor(entry), ReviewerSensor(entry)]
+    )
+
+
+def _device(entry: HealthHubConfigEntry) -> DeviceInfo:
+    return DeviceInfo(
+        identifiers={(DOMAIN, entry.entry_id)},
+        name=NAME,
+        manufacturer="Gadgetbridge",
+        entry_type=DeviceEntryType.SERVICE,
+    )
 
 
 class HealthSensor(SensorEntity):
@@ -195,12 +207,7 @@ class HealthSensor(SensorEntity):
         self.entity_description = description
         self._entry = entry
         self._attr_unique_id = f"{entry.entry_id}_{description.key}"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-            name=NAME,
-            manufacturer="Gadgetbridge",
-            entry_type=DeviceEntryType.SERVICE,
-        )
+        self._attr_device_info = _device(entry)
 
     @property
     def native_value(self) -> Any:
@@ -218,3 +225,82 @@ class HealthSensor(SensorEntity):
     @callback
     def _updated(self) -> None:
         self.async_write_ha_state()
+
+
+class _ReviewEntity(SensorEntity):
+    _attr_has_entity_name = True
+    _attr_should_poll = False
+    _key = ""
+
+    def __init__(self, entry: HealthHubConfigEntry) -> None:
+        self._entry = entry
+        self._attr_unique_id = f"{entry.entry_id}_{self._key}"
+        self._attr_device_info = _device(entry)
+
+    @property
+    def _reviews(self):
+        return self._entry.runtime_data.reviews
+
+    async def async_added_to_hass(self) -> None:
+        self.async_on_remove(
+            async_dispatcher_connect(self.hass, SIGNAL_REVIEW, self.async_write_ha_state)
+        )
+
+
+class DailyReviewSensor(_ReviewEntity):
+    """Today's review headline. The full review is on the Health page."""
+
+    _key = "daily_review"
+    _attr_name = "Daily review"
+    _attr_icon = "mdi:text-box-check-outline"
+    _unrecorded_attributes = frozenset({"summary", "suggestions"})
+
+    @property
+    def native_value(self) -> str | None:
+        latest = self._reviews.latest
+        if not latest or not latest.get("review_json"):
+            return None
+        return (self._reviews.as_dict(latest)["review"].get("headline") or "")[:255] or None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        latest = self._reviews.as_dict(self._reviews.latest)
+        if not latest:
+            return {}
+        review = latest["review"] or {}
+        return {
+            "date": latest["day"],
+            "generated": latest["finished"],
+            "attention": attention_label(review),
+            "summary": review.get("summary"),
+            "suggestions": [s["text"] for s in review.get("suggestions", [])],
+        }
+
+
+class ReviewerSensor(_ReviewEntity):
+    """Whether the Health Hub Reviewer add-on is there and signed in."""
+
+    _key = "reviewer"
+    _attr_name = "Reviewer"
+    _attr_icon = "mdi:robot-outline"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = ["ready", "running", "no_login", "offline", "error", "not_installed", "disabled", "unknown"]
+
+    @property
+    def native_value(self) -> str:
+        return self._reviews.reviewer_state
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        r = self._reviews.reviewer
+        attempt = self._reviews.last_attempt
+        return {
+            "last_seen": r.get("alive"),
+            "detail": r.get("detail"),
+            "reviewer_version": r.get("reviewer_version"),
+            "claude_code_version": r.get("claude_code_version"),
+            "last_request": attempt["day"] if attempt else None,
+            "last_request_status": attempt["status"] if attempt else None,
+            "last_error": attempt.get("error") if attempt else None,
+        }

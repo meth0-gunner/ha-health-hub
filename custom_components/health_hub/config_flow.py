@@ -9,13 +9,17 @@ import voluptuous as vol
 from homeassistant.components.file_upload import process_uploaded_file
 from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult, OptionsFlow
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.selector import FileSelector, FileSelectorConfig
+from homeassistant.helpers.selector import FileSelector, FileSelectorConfig, TimeSelector
 
 from .const import (
     CONF_OVERLAP_HOURS,
     CONF_RETENTION_DAYS,
+    CONF_REVIEW_ENABLED,
+    CONF_REVIEW_TIME,
     DEFAULT_OVERLAP_HOURS,
     DEFAULT_RETENTION_DAYS,
+    DEFAULT_REVIEW_ENABLED,
+    DEFAULT_REVIEW_TIME,
     DOMAIN,
     NAME,
 )
@@ -64,6 +68,14 @@ class HealthHubOptionsFlow(OptionsFlow):
                     CONF_OVERLAP_HOURS,
                     default=options.get(CONF_OVERLAP_HOURS, DEFAULT_OVERLAP_HOURS),
                 ): vol.All(vol.Coerce(int), vol.Range(min=1, max=336)),
+                vol.Required(
+                    CONF_REVIEW_ENABLED,
+                    default=options.get(CONF_REVIEW_ENABLED, DEFAULT_REVIEW_ENABLED),
+                ): bool,
+                vol.Required(
+                    CONF_REVIEW_TIME,
+                    default=options.get(CONF_REVIEW_TIME, DEFAULT_REVIEW_TIME),
+                ): TimeSelector(),
             }
         )
         return self.async_show_form(step_id="settings", data_schema=schema)

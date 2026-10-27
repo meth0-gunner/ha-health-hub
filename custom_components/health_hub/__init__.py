@@ -14,6 +14,7 @@ from homeassistant.helpers.typing import ConfigType
 from .api import async_register_api
 from .const import DOMAIN
 from .hub import HealthHub
+from .review import ReviewManager
 
 PLATFORMS = [Platform.SENSOR]
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
@@ -30,13 +31,22 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         for entry in hass.config_entries.async_loaded_entries(DOMAIN):
             await entry.runtime_data.async_rebuild_statistics()
 
+    async def request_review(call: ServiceCall) -> None:
+        for entry in hass.config_entries.async_loaded_entries(DOMAIN):
+            await entry.runtime_data.reviews.async_request("manual")
+
     hass.services.async_register(DOMAIN, "rebuild_statistics", rebuild)
+    hass.services.async_register(DOMAIN, "request_review", request_review)
     return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: HealthHubConfigEntry) -> bool:
     hub = await HealthHub.async_create(hass, entry)
     entry.runtime_data = hub
+    hub.reviews = ReviewManager(hass, hub)
+    hub.on_sleep_synced = hub.reviews.async_sleep_synced
+    await hub.reviews.async_start()
+    entry.async_on_unload(hub.reviews.async_stop)
 
     async def _midnight(_now: datetime) -> None:
         await hub.async_refresh()  # "today" totals start again

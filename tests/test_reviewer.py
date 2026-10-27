@@ -77,10 +77,12 @@ def test_review_runs_with_web_tools_only(addon):
     out = run()
     assert out["prompt"] == "Review please"
     args = out["args"]
-    assert args[args.index("--allowedTools") + 1] == "WebSearch,WebFetch"
-    blocked = args[args.index("--disallowedTools") + 1].split(",")
+    assert "--tools=WebSearch,WebFetch" in args
+    assert "--allowedTools=WebSearch,WebFetch" in args
+    blocked = next(a for a in args if a.startswith("--disallowedTools=")).split("=", 1)[1].split(",")
     assert {"Bash", "Read", "Write", "Edit", "Glob", "Grep"} <= set(blocked)
-    assert "--strict-mcp-config" in args and "--model" not in args
+    assert {"--restricted", "--safe-mode", "--strict-mcp-config"} <= set(args)
+    assert "--model" not in args
     resp = out["response"]
     assert resp["id"] == "r1" and resp["status"] == "ok"
     assert resp["review"] == {"headline": "Good night", "items": []}
@@ -99,8 +101,9 @@ def test_options_without_web_and_with_model(addon):
     request, run, _ = addon
     request("r2")
     args = run(options={"web_research": False, "model": "sonnet", "max_turns": 5})["args"]
-    assert "--allowedTools" not in args
-    assert "WebSearch" in args[args.index("--disallowedTools") + 1]
+    assert "--tools=" in args
+    assert not any(a.startswith("--allowedTools") for a in args)
+    assert "WebSearch" in next(a for a in args if a.startswith("--disallowedTools="))
     assert args[args.index("--model") + 1] == "sonnet"
     assert args[args.index("--max-turns") + 1] == "5"
 
