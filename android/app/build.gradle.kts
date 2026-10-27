@@ -3,8 +3,14 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
-// CI passes the build number; local builds use 1.
-val buildNumber = (project.findProperty("buildNumber") as String?)?.toIntOrNull() ?: 1
+// Releases pass the version from the git tag (v0.1.0 -> "0.1.0", code 100).
+// Other builds get a development version.
+val appVersionName = (project.findProperty("appVersion") as String?) ?: "0.0.0-dev"
+val appVersionCode = appVersionName.substringBefore("-").split(".")
+    .mapNotNull { it.toIntOrNull() }
+    .let { (it + listOf(0, 0, 0)).take(3) }
+    .let { (major, minor, patch) -> major * 10000 + minor * 100 + patch }
+    .coerceAtLeast(1)
 
 android {
     namespace = "io.github.meth0gunner.healthhub"
@@ -14,8 +20,8 @@ android {
         applicationId = "io.github.meth0gunner.healthhub"
         minSdk = 29
         targetSdk = 35
-        versionCode = buildNumber
-        versionName = "0.1.$buildNumber"
+        versionCode = appVersionCode
+        versionName = appVersionName
     }
 
     // Every build must be signed with the same key, or Android refuses to

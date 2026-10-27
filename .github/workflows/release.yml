@@ -1,0 +1,66 @@
+name: Release
+
+# Push a tag like v0.1.0 to publish a release: HACS installs the integration
+# from it, and the phone app APK is attached for download.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      HH_KEYSTORE_PASSWORD: ${{ secrets.HH_KEYSTORE_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version from tag
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
+      - name: Integration version must match the tag
+        run: |
+          manifest=$(python3 -c "import json;print(json.load(open('custom_components/health_hub/manifest.json'))['version'])")
+          if [ "$manifest" != "$VERSION" ]; then
+            echo "::error::manifest.json says $manifest but the tag is $VERSION"; exit 1
+          fi
+
+      - name: Signing key must be available
+        run: |
+          if [ -z "$HH_KEYSTORE_PASSWORD" ]; then
+            echo "::error::HH_KEYSTORE_PASSWORD secret is not set"; exit 1
+          fi
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements_test.txt
+      - name: Integration tests
+        run: pip install -r requirements_test.txt && pytest -q
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+      - name: Build signed phone app
+        working-directory: android
+        run: gradle assembleRelease -PappVersion="$VERSION" --stacktrace
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp android/app/build/outputs/apk/release/app-release.apk "HealthHub-$VERSION.apk"
+          gh release create "$GITHUB_REF_NAME" "HealthHub-$VERSION.apk" \
+            --title "Health Hub $VERSION" \
+            --notes-file - <<EOF
+          **Home Assistant:** update Health Hub in HACS.
+
+          **Phone:** download HealthHub-$VERSION.apk below on your phone and open it to install or update.
+          EOF

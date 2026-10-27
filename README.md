@@ -5,6 +5,28 @@ A cloud-free replacement for the Fitbit app: band data from
 
 Built for a Xiaomi Smart Band 8 Pro on a Pixel, with Home Assistant on an HA Green.
 
+## Install
+
+**Home Assistant**
+
+1. HACS → three-dot menu → **Custom repositories** → add
+   `https://github.com/meth0-gunner/ha-health-hub`, type **Integration**.
+2. Find **Health Hub** in HACS, **Download**, then restart Home Assistant.
+3. **Settings → Devices & services → Add integration → Health Hub**.
+4. Your profile → **Security** → **Long-lived access tokens** → create one called
+   "Health Hub phone" (the user must be an admin). Copy it.
+
+**Phone**
+
+1. Gadgetbridge: Settings → Automations → **Auto export database**, hourly, into a
+   folder such as Documents/Gadgetbridge.
+2. Download the latest `HealthHub-x.y.z.apk` from
+   [Releases](https://github.com/meth0-gunner/ha-health-hub/releases) on the phone
+   and open it to install.
+3. In the app: enter your Home Assistant address (your Nabu Casa address works at
+   home and away) and the token, tap **Save and test**, choose the export folder,
+   allow background running, then **Sync now**.
+
 ## How it works
 
 ```

@@ -1,5 +1,6 @@
 name: Phone app
 
+# Checks that the app builds on every change. Releases are made by release.yml.
 on:
   push:
     paths:
@@ -7,15 +8,9 @@ on:
       - ".github/workflows/android.yml"
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-      HH_KEYSTORE_PASSWORD: ${{ secrets.HH_KEYSTORE_PASSWORD }}
-      VERSION: 0.1.${{ github.run_number }}
     steps:
       - uses: actions/checkout@v4
 
@@ -30,28 +25,4 @@ jobs:
 
       - name: Build
         working-directory: android
-        run: gradle assembleRelease -PbuildNumber=${{ github.run_number }} --stacktrace
-
-      - name: Name the APK
-        run: |
-          mkdir -p out
-          cp android/app/build/outputs/apk/release/app-release.apk "out/HealthHub-$VERSION.apk"
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: HealthHub-${{ env.VERSION }}
-          path: out/*.apk
-
-      - name: Signing key missing
-        if: env.HH_KEYSTORE_PASSWORD == ''
-        run: echo "::warning::HH_KEYSTORE_PASSWORD secret not set; built with a debug key and not published."
-
-      - name: Publish to Releases
-        if: env.HH_KEYSTORE_PASSWORD != '' && github.ref == 'refs/heads/main'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release create "app-v$VERSION" "out/HealthHub-$VERSION.apk" \
-            --title "Phone app $VERSION" \
-            --notes "Download HealthHub-$VERSION.apk on your phone and open it to install or update." \
-            --latest
+        run: gradle assembleRelease --stacktrace
