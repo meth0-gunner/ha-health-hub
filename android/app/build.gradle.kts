@@ -27,7 +27,7 @@ android {
     // Every build must be signed with the same key, or Android refuses to
     // install it as an update. The key file is encrypted; its password is the
     // HH_KEYSTORE_PASSWORD secret in GitHub. Without it, builds use a debug key.
-    val keystorePassword = System.getenv("HH_KEYSTORE_PASSWORD")?.takeIf { it.isNotEmpty() }
+    val keystorePassword = System.getenv("HH_KEYSTORE_PASSWORD")?.trim()?.takeIf { it.isNotEmpty() }
     signingConfigs {
         if (keystorePassword != null) {
             create("release") {

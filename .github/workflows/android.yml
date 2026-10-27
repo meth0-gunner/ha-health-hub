@@ -25,4 +25,14 @@ jobs:
 
       - name: Build
         working-directory: android
-        run: gradle assembleRelease --stacktrace
+        run: |
+          set -o pipefail
+          gradle assembleRelease 2>&1 | tee ../gradle.log
+
+      - name: Show build errors
+        if: failure()
+        run: |
+          [ -f gradle.log ] || exit 0
+          grep -E "^e: |What went wrong|Caused by|> " gradle.log | head -25 | while IFS= read -r line; do
+            echo "::error::${line:0:400}"
+          done
