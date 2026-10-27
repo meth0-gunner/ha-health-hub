@@ -1,0 +1,40 @@
+# Personal data: never commit Gadgetbridge exports or health databases
+Gadgetbridge
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+exports/
+fitbit-export/
+Takeout/
+
+# Signing keys and secrets
+*.jks
+*.keystore
+keystore.properties
+secrets.yaml
+.env
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+*.egg-info/
+
+# Android / Gradle
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+*.apk
+*.aab
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store

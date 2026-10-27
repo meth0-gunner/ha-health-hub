@@ -1,0 +1,34 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Health Hub",
+        "description": "Receives your band's data from the Health Hub phone app. After adding it, set up the phone app with this Home Assistant address and an admin user's long-lived access token."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Health Hub is already set up."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Health Hub options",
+        "data": {
+          "retention_days": "Days of minute-level detail to keep",
+          "overlap_hours": "Hours of recent data to re-check on each sync"
+        },
+        "data_description": {
+          "retention_days": "Hourly and daily history is kept for good; this only limits the minute-by-minute detail.",
+          "overlap_hours": "Gadgetbridge updates some recent rows after the fact, so each sync re-reads this much."
+        }
+      }
+    }
+  },
+  "services": {
+    "rebuild_statistics": {
+      "name": "Rebuild statistics",
+      "description": "Rewrites all Health Hub long-term statistics from its stored data, for example after an import or a fix."
+    }
+  }
+}
