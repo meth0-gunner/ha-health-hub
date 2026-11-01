@@ -49,6 +49,10 @@ export function render(app, data) {
       </article>
       ${days.length <= 45 ? `<article class="card" style="flex:2 1 380px" aria-label="Bed and wake times"><div class="head"><h2>Bed and wake times</h2>${legend([["#22303A", "Target window"]])}</div>${bedWake(app, days)}</article>` : ""}
     </div>
+    <article class="card" aria-label="Overnight heart rate">
+      <div class="head"><h2>Overnight heart rate</h2>${legend([[C.rose, "Average"], ["#7A4452", "Lowest"], [C.text, "Your usual average", "dash"]])}</div>
+      ${heartPerNight(app, days, range.baseline)}
+    </article>
     ${highlights(app, range.sleep_highlights, "No sleep patterns stand out yet. They appear once there are a few weeks of nights to compare.")}
     ${review ? reviewCard(app, review, { topics: ["sleep", "oxygen", "recovery"], compact: true }) : ""}
     ${night ? nightSection(app, night) : ""}
@@ -119,7 +123,41 @@ function summaryTiles(app, days, debt) {
     ${tile("Consistency", isNum(consistency) ? `${consistency} <span class="small muted" style="font-weight:400">/ 100</span>` : "–", isNum(spread) ? `Bedtime varied by up to ${Math.round(spread)} min` : "", isNum(consistency) && consistency < 75 ? C.amber : "")}
     ${tile("Average bed / wake", nights.length ? `${clockFromNoon(mean(beds))} <span class="small muted" style="font-weight:400">/ ${clockFromNoon(mean(wakes))}</span>` : "–", `Targets ${clock12(s.bed_target)} / ${clock12(s.wake_target)}`)}
     ${tile("Sleep debt", dur(debt), "Last 7 days, naps included")}
+    ${heartTile(app, nights)}
   </section>`;
+}
+
+function heartTile(app, nights) {
+  const avgs = nights.map((d) => d.night.overnight && d.night.overnight.hr_avg).filter(isNum);
+  const lows = nights.map((d) => d.night.overnight && d.night.overnight.hr_min).filter(isNum);
+  if (!avgs.length) return tile("Overnight heart rate", "–", "Needs nights with the band");
+  return tile("Overnight heart rate", `${Math.round(mean(avgs))} <span class="small muted" style="font-weight:400">bpm avg</span>`, `Lowest ${Math.min(...lows)} · ${avgs.length} night${avgs.length === 1 ? "" : "s"} with the band`);
+}
+
+/** Each night's average heart rate (and its lowest), against your usual. */
+function heartPerNight(app, days, base) {
+  const pts = days.map((d, i) => [i, d.night && d.night.overnight ? d.night.overnight.hr_avg : null]);
+  const lows = days.map((d, i) => [i, d.night && d.night.overnight ? d.night.overnight.hr_min : null]);
+  const vals = pts.concat(lows).map((p) => p[1]).filter(isNum);
+  if (!vals.length) return `<p class="empty">No nights with band heart rate in this period yet.</p>`;
+  const usual = base && isNum(base.night_hr) ? base.night_hr : null;
+  const all = vals.concat(isNum(usual) ? [usual] : []);
+  const lo = Math.floor(Math.min(...all) - 3);
+  const hi = Math.ceil(Math.max(...all) + 3);
+  const H = 140;
+  const W = Math.max(days.length * 40, 100);
+  const sx = scale(-0.5, days.length - 0.5, 0, W);
+  const sy = scale(lo, hi, H - 6, 6);
+  const inner = (isNum(usual) ? hline(sy(usual), W, C.text, "6 5") : "")
+    + stroke(line(lows, sx, sy), C.rose, 1.5, 'stroke-opacity="0.4"') + dotLayer(dots(lows, sx, sy), C.rose, 5).replace("<path", '<path stroke-opacity="0.45"')
+    + stroke(line(pts, sx, sy), C.rose, 2) + dotLayer(dots(pts, sx, sy), C.rose, 8);
+  const tips = days.map((d, i) => [i, d.night && d.night.overnight && isNum(d.night.overnight.hr_avg) ? `${shortDate(d.date)} · avg ${Math.round(d.night.overnight.hr_avg)}, lowest ${d.night.overnight.hr_min} bpm` : `${shortDate(d.date)} · no band data`]);
+  const ticks = [hi, Math.round((hi + lo) / 2), lo];
+  return `<div class="colchart"><div class="ylabels" style="height:${H}px">${ticks.map((t, i) => `<span style="top:${i * 50}%">${t}</span>`).join("")}</div>
+    ${hoverable(wide(W, H, inner, { label: "Average and lowest heart rate each night", height: H }), -0.5, days.length - 0.5, tips)}
+    <span></span>${days.length <= 45
+      ? `<div class="xlabels" style="grid-template-columns:repeat(${days.length},minmax(0,1fr))">${days.map((d, i) => `<span>${days.length <= 8 ? dayName(d.date, true) : i % Math.ceil(days.length / 14) === 0 ? String(Number(d.date.slice(8))) : ""}</span>`).join("")}</div>`
+      : axis(axisLabels(days))}</div>`;
 }
 
 function perNight(app, days) {
@@ -214,12 +252,37 @@ function nightSection(app, data) {
         <ul class="meters">${meters}</ul>
         ${scoreWhy}
         ${oxygen}
+        ${overnightHeart(app, night, det, data.baseline)}
         <dl style="margin:0;display:grid;grid-template-columns:1fr auto auto;gap:8px 14px;font-size:13px">${stageRows(night, data.baseline)}</dl>
         ${naps}
       </div>
     </div>
     ${det && det.readings.length ? rawTable(app, night, det) : ""}
   </article>`;
+}
+
+/** Average and lowest heart rate during the night, against your usual nights. */
+function overnightHeart(app, night, det, base) {
+  const o = night.overnight;
+  if (!o || !isNum(o.hr_avg)) return "";
+  const avg = Math.round(o.hr_avg);
+  const usual = base && isNum(base.night_hr) ? Math.round(base.night_hr) : null;
+  const diff = isNum(usual) ? avg - usual : null;
+  const vs = !isNum(diff) ? "no usual yet" : diff === 0 ? `your usual ${usual}` : `${Math.abs(diff)} ${diff > 0 ? "above" : "below"} your usual ${usual}`;
+  const vsColor = isNum(diff) && diff >= 3 ? "var(--amber)" : isNum(diff) && diff <= -3 ? "var(--teal)" : "var(--muted)";
+  const low = det && det.readings.length ? lowestHr(det.readings) : null;
+  const lowText = isNum(o.hr_min) ? `${o.hr_min} bpm${low ? ` at ${clock12(addMin(night.bed, low.minute))}` : ""}` : "–";
+  return `<div class="card soft" style="padding:12px 14px;gap:6px" aria-label="Overnight heart rate">
+      <span style="font-weight:600">Overnight heart rate</span>
+      <dl style="margin:0;display:grid;grid-template-columns:1fr auto;gap:6px 14px;font-size:13px">
+        <dt class="muted">Average</dt><dd style="margin:0;font-weight:600">${avg} bpm</dd>
+        <dd style="margin:0;grid-column:1 / -1;color:${vsColor}" class="small">${h(vs)}</dd>
+        <dt class="muted">Lowest</dt><dd style="margin:0;font-weight:600">${h(lowText)}</dd>
+      </dl>
+      ${why(app, {
+        rule: "The average of every heart-rate reading the band took between falling asleep and waking. Your usual is the average of the same figure over your last 30 nights with the band (at least 5 needed). A night 3 bpm or more above your usual is shown in amber, 3 or more below in green.",
+      }, { key: "why-night-hr" })}
+    </div>`;
 }
 
 function nightTitle(date) {
@@ -242,7 +305,9 @@ function nightCharts(app, night, det, length) {
   const syH = scale(hrLo, hrHi, 76, 4);
   const low = lowestHr(r);
   const lowMark = low ? `<path d="M${sx(low.minute).toFixed(1)} ${syH(low.bpm).toFixed(1)} l0.01 0" stroke="#FFFFFF" stroke-width="11" stroke-linecap="round" fill="none" vector-effect="non-scaling-stroke" opacity="0.9"></path><path d="M${sx(low.minute).toFixed(1)} ${syH(low.bpm).toFixed(1)} l0.01 0" stroke="${C.rose}" stroke-width="7" stroke-linecap="round" fill="none" vector-effect="non-scaling-stroke"></path>` : "";
-  const hrSvg = wide(W, 80, stroke(line(hr, sx, syH), C.rose, 1, 'stroke-opacity="0.45"') + dotLayer(dots(hr, sx, syH), C.rose, 3.5) + lowMark, { height: 80, label: `Overnight heart rate${low ? `, lowest ${low.bpm} at ${clock12(addMin(night.bed, low.minute))}` : ""}` });
+  const hrAvg = hr.length ? Math.round(mean(hr.map((p) => p[1]))) : null;
+  const avgLine = isNum(hrAvg) ? hline(syH(hrAvg), W, C.text, "5 5").replace("<line", '<line stroke-opacity="0.55"') : "";
+  const hrSvg = wide(W, 80, avgLine + stroke(line(hr, sx, syH), C.rose, 1, 'stroke-opacity="0.45"') + dotLayer(dots(hr, sx, syH), C.rose, 3.5) + lowMark, { height: 80, label: `Overnight heart rate${isNum(hrAvg) ? `, average ${hrAvg}` : ""}${low ? `, lowest ${low.bpm} at ${clock12(addMin(night.bed, low.minute))}` : ""}; the dashed line is the night's average` });
   const spLo = Math.min(86, ...sp.map((p) => p[1])) - 1;
   const syS = scale(spLo, 100, 76, 4);
   const spSvg = wide(W, 80, `<rect x="0" y="${syS(90).toFixed(1)}" width="${W}" height="${(76 - syS(90)).toFixed(1)}" fill="${C.roseBand}"></rect>` + dotLayer(dots(sp, sx, syS), C.blue, 4.5), { height: 80, label: "Overnight blood oxygen; the shaded band is below 90%" });
@@ -252,7 +317,7 @@ function nightCharts(app, night, det, length) {
   const tip = (pts, unit) => pts.map(([m, v]) => [m, `${clock12(addMin(night.bed, m))} · ${v}${unit}`]);
   return `<div class="lanes">
     <span class="lab">Stages</span>${det.segments.length ? hypnogram(det.segments, length, { height: 120 }) : `<span class="muted small">No stages</span>`}
-    <span class="lab">Heart rate<b>${range(hr)}</b>bpm</span>${hoverable(hrSvg, 0, length, tip(hr, " bpm"))}
+    <span class="lab">Heart rate<b>avg ${isNum(hrAvg) ? hrAvg : "–"}</b>${range(hr)} bpm</span>${hoverable(hrSvg, 0, length, tip(hr, " bpm"))}
     <span class="lab">Blood oxygen<b>${range(sp)}</b>%</span>${hoverable(spSvg, 0, length, tip(sp, "%"))}
     <span class="lab">Stress<b>${st.length ? Math.round(mean(st.map((p) => p[1]))) : "–"}</b>avg</span>${hoverable(stSvg, 0, length, tip(st, ""))}
     <span></span>${axis(nightTimes(night, length))}

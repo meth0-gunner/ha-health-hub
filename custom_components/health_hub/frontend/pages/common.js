@@ -270,6 +270,7 @@ export function lastNightCard(app, d) {
       <dl style="flex:1 1 260px;margin:0;display:grid;grid-template-columns:1fr auto auto;gap:10px 16px;font-size:14px;align-content:center">
         ${stageRows(night, d.baseline)}
         ${lowest ? `<dt class="muted" style="border-top:1px solid var(--line);padding-top:10px">Lowest heart rate</dt><dd style="margin:0;font-weight:600;border-top:1px solid var(--line);padding-top:10px">${lowest.bpm} bpm</dd><dd style="margin:0;border-top:1px solid var(--line);padding-top:10px" class="muted">at ${clock12(addMin(night.bed, lowest.minute))}</dd>` : ""}
+        ${night.overnight && isNum(night.overnight.hr_avg) ? `<dt class="muted">Average heart rate</dt><dd style="margin:0;font-weight:600">${Math.round(night.overnight.hr_avg)} bpm</dd><dd style="margin:0" class="muted">${d.baseline && isNum(d.baseline.night_hr) ? `usual ${Math.round(d.baseline.night_hr)}` : ""}</dd>` : ""}
       </dl>
     </div>
   </article>`;
