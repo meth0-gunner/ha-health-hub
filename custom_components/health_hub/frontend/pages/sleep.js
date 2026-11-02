@@ -331,7 +331,8 @@ function nightCharts(app, night, det, length) {
   const hrSvg = hrLane(hr, hrAvg, low, `Heart rate last night${isNum(hrAvg) ? `, average ${hrAvg}` : ""}${low ? `, lowest ${low[1]} at ${clockAt(low[0])}` : ""}; the shaded band is your usual range at that time of night`);
   const prevAvg = avgOf(prevHr);
   const prevLow = lowest(prevHr);
-  const prevSvg = prev ? hrLane(prevHr, prevAvg, prevLow, `Heart rate the night before${isNum(prevAvg) ? `, average ${prevAvg}` : ""}${prevLow ? `, lowest ${prevLow[1]}` : ""}`) : "";
+  // The dashed line on the night before is last night's average, so the two nights compare at a glance.
+  const prevSvg = prev ? hrLane(prevHr, hrAvg, prevLow, `Heart rate the night before${isNum(prevAvg) ? `, average ${prevAvg}` : ""}${prevLow ? `, lowest ${prevLow[1]}` : ""}; the dashed line is last night's average${isNum(hrAvg) ? ` (${hrAvg})` : ""}`) : "";
 
   const spLo = Math.min(86, ...sp.map((p) => p[1])) - 1;
   const syS = scale(spLo, 100, 76, 4);
@@ -357,7 +358,7 @@ function nightCharts(app, night, det, length) {
     <span class="lab">Blood oxygen<b>${range(sp)}</b>%</span>${hoverable(spSvg, 0, span, tip(sp, "%"))}
     <span class="lab">Stress<b>${st.length ? Math.round(mean(st.map((p) => p[1]))) : "–"}</b>avg</span>${hoverable(stSvg, 0, span, tip(st, ""))}
     <span></span>${axis(ticks)}
-    <span></span><p class="tiny faint" style="margin:4px 0 0">${h(usual)}${vsPrev ? ` Last night's average was ${h(vsPrev)}.` : ""} Dashed lines: each night's average.</p>
+    <span></span><p class="tiny faint" style="margin:4px 0 0">${h(usual)}${vsPrev ? ` Last night's average was ${h(vsPrev)}.` : ""} Dashed line on both rows: last night's average${isNum(hrAvg) ? ` (${hrAvg} bpm)` : ""}.</p>
   </div>`;
 }
 
