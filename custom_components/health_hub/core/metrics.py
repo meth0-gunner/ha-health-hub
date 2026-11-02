@@ -522,6 +522,52 @@ class Calculator:
             row.append(name)
         return {"segments": segments, "readings": readings, "length_min": (wake - bed) // 60}
 
+    def night_compare(self, day: date) -> dict[str, Any]:
+        """The night before `day`'s night, and your usual overnight heart rate.
+
+        Times are minutes after midday (so a night reads left to right across
+        midnight). The usual range is the 10th to 90th percentile of every
+        heart-rate reading taken asleep in each quarter hour, over the band
+        nights in the 30 days before; a quarter hour needs readings from at
+        least 3 nights.
+        """
+        def from_noon(ts: int) -> int:
+            return (minute_of_day(ts, self.tz) - 720) % 1440
+
+        slots: dict[int, list[int]] = {}
+        slot_nights: dict[int, set[int]] = {}
+        previous = None
+        nights = 0
+        for back in range(1, BASELINE_DAYS + 1):
+            n = self.raw(day - timedelta(days=back)).night
+            if not n or n.source != "band":
+                continue
+            hr = [(m["ts"], m["heart_rate"]) for m in self.store.minutes_between(n.bed_ts, n.wake_ts)
+                  if m["heart_rate"] is not None]
+            if not hr:
+                continue
+            nights += 1
+            for ts, bpm in hr:
+                slot = from_noon(ts) // 15
+                slots.setdefault(slot, []).append(bpm)
+                slot_nights.setdefault(slot, set()).add(back)
+            if back == 1:
+                values = [v for _t, v in hr]
+                previous = {
+                    "date": (day - timedelta(days=1)).isoformat(),
+                    "bed_from_noon": from_noon(n.bed_ts),
+                    "wake_from_noon": from_noon(n.wake_ts),
+                    "readings": [[from_noon(ts), bpm] for ts, bpm in hr],
+                    "hr_avg": _r(statistics.fmean(values)),
+                    "hr_min": min(values),
+                }
+        band = []
+        for slot in sorted(slots):
+            vals = sorted(slots[slot])
+            if len(slot_nights[slot]) >= 3:
+                band.append([slot * 15, vals[len(vals) // 10], vals[(len(vals) * 9) // 10]])
+        return {"previous": previous, "hr_band": band, "band_nights": nights}
+
     def minutes_series(self, day: date) -> list[list[Any]]:
         """[minute of day, steps, heart rate, stress, spo2] for each band minute."""
         start, end = day_bounds(day, self.tz)

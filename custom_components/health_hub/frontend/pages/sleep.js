@@ -295,32 +295,69 @@ function hypnogramOnly(night, det, length) {
 
 function nightCharts(app, night, det, length) {
   const W = 900;
-  const sx = scale(0, length, 0, W);
-  const r = det.readings; // [minute, hr, spo2, stress, stage]
-  const hr = r.filter((x) => isNum(x[1])).map((x) => [x[0], x[1]]);
-  const sp = r.filter((x) => isNum(x[2])).map((x) => [x[0], x[2]]);
-  const st = r.filter((x) => isNum(x[3])).map((x) => [x[0], x[3]]);
-  const hrLo = Math.min(...hr.map((p) => p[1]), 50) - 2;
-  const hrHi = Math.max(...hr.map((p) => p[1]), 80) + 2;
+  const cmp = det.compare || {};
+  const prev = cmp.previous;
+  // One clock axis for both nights (minutes after midday), so the same spot
+  // is the same time of night in every lane.
+  const bed = night.bed_from_noon;
+  const x0 = prev ? Math.min(bed, prev.bed_from_noon) : bed;
+  const x1 = prev ? Math.max(bed + length, prev.wake_from_noon) : bed + length;
+  const shift = bed - x0;
+  const span = Math.max(x1 - x0, 1);
+  const sx = scale(0, span, 0, W);
+  const at = (m) => m - x0; // minutes after midday → position on the axis
+  const r = det.readings; // [minute after bed, hr, spo2, stress, stage]
+  const hr = r.filter((x) => isNum(x[1])).map((x) => [x[0] + shift, x[1]]);
+  const sp = r.filter((x) => isNum(x[2])).map((x) => [x[0] + shift, x[2]]);
+  const st = r.filter((x) => isNum(x[3])).map((x) => [x[0] + shift, x[3]]);
+  const prevHr = prev ? prev.readings.map(([m, v]) => [at(m), v]) : [];
+  const bandPts = (cmp.hr_band || []).map(([m, lo, hi]) => [at(m + 7.5), lo, hi]).filter(([x]) => x >= -7.5 && x <= span + 7.5);
+  const allHr = hr.concat(prevHr).map((p) => p[1]).concat(bandPts.flatMap((b) => [b[1], b[2]]));
+  const hrLo = Math.min(...allHr, 50) - 2;
+  const hrHi = Math.max(...allHr, 80) + 2;
   const syH = scale(hrLo, hrHi, 76, 4);
-  const low = lowestHr(r);
-  const lowMark = low ? `<path d="M${sx(low.minute).toFixed(1)} ${syH(low.bpm).toFixed(1)} l0.01 0" stroke="#FFFFFF" stroke-width="11" stroke-linecap="round" fill="none" vector-effect="non-scaling-stroke" opacity="0.9"></path><path d="M${sx(low.minute).toFixed(1)} ${syH(low.bpm).toFixed(1)} l0.01 0" stroke="${C.rose}" stroke-width="7" stroke-linecap="round" fill="none" vector-effect="non-scaling-stroke"></path>` : "";
-  const hrAvg = hr.length ? Math.round(mean(hr.map((p) => p[1]))) : null;
-  const avgLine = isNum(hrAvg) ? hline(syH(hrAvg), W, C.text, "5 5").replace("<line", '<line stroke-opacity="0.55"') : "";
-  const hrSvg = wide(W, 80, avgLine + stroke(line(hr, sx, syH), C.rose, 1, 'stroke-opacity="0.45"') + dotLayer(dots(hr, sx, syH), C.rose, 3.5) + lowMark, { height: 80, label: `Overnight heart rate${isNum(hrAvg) ? `, average ${hrAvg}` : ""}${low ? `, lowest ${low.bpm} at ${clock12(addMin(night.bed, low.minute))}` : ""}; the dashed line is the night's average` });
+  const bandSvg = fill(band(bandPts, sx, syH), C.roseBand);
+
+  const hrLane = (pts, avg, low, label) => {
+    const lowMark = low ? `<path d="M${sx(low[0]).toFixed(1)} ${syH(low[1]).toFixed(1)} l0.01 0" stroke="#FFFFFF" stroke-width="11" stroke-linecap="round" fill="none" vector-effect="non-scaling-stroke" opacity="0.9"></path><path d="M${sx(low[0]).toFixed(1)} ${syH(low[1]).toFixed(1)} l0.01 0" stroke="${C.rose}" stroke-width="7" stroke-linecap="round" fill="none" vector-effect="non-scaling-stroke"></path>` : "";
+    const avgLine = isNum(avg) ? hline(syH(avg), W, C.text, "5 5").replace("<line", '<line stroke-opacity="0.55"') : "";
+    return wide(W, 80, bandSvg + avgLine + stroke(line(pts, sx, syH), C.rose, 1, 'stroke-opacity="0.45"') + dotLayer(dots(pts, sx, syH), C.rose, 3.5) + lowMark, { height: 80, label });
+  };
+  const lowest = (pts) => pts.reduce((a, p) => (!a || p[1] < a[1] ? p : a), null);
+  const avgOf = (pts) => (pts.length ? Math.round(mean(pts.map((p) => p[1]))) : null);
+  const hrAvg = avgOf(hr);
+  const low = lowest(hr);
+  const clockAt = (x) => clockFromNoon(x + x0);
+  const hrSvg = hrLane(hr, hrAvg, low, `Heart rate last night${isNum(hrAvg) ? `, average ${hrAvg}` : ""}${low ? `, lowest ${low[1]} at ${clockAt(low[0])}` : ""}; the shaded band is your usual range at that time of night`);
+  const prevAvg = avgOf(prevHr);
+  const prevLow = lowest(prevHr);
+  const prevSvg = prev ? hrLane(prevHr, prevAvg, prevLow, `Heart rate the night before${isNum(prevAvg) ? `, average ${prevAvg}` : ""}${prevLow ? `, lowest ${prevLow[1]}` : ""}`) : "";
+
   const spLo = Math.min(86, ...sp.map((p) => p[1])) - 1;
   const syS = scale(spLo, 100, 76, 4);
   const spSvg = wide(W, 80, `<rect x="0" y="${syS(90).toFixed(1)}" width="${W}" height="${(76 - syS(90)).toFixed(1)}" fill="${C.roseBand}"></rect>` + dotLayer(dots(sp, sx, syS), C.blue, 4.5), { height: 80, label: "Overnight blood oxygen; the shaded band is below 90%" });
   const syT = scale(0, 60, 56, 4);
   const stSvg = wide(W, 60, dotLayer(dots(st, sx, syT), C.amber, 4.5), { height: 60, label: "Overnight stress" });
   const range = (pts) => (pts.length ? `${Math.min(...pts.map((p) => p[1]))}–${Math.max(...pts.map((p) => p[1]))}` : "–");
-  const tip = (pts, unit) => pts.map(([m, v]) => [m, `${clock12(addMin(night.bed, m))} · ${v}${unit}`]);
+  const tip = (pts, unit) => pts.map(([m, v]) => [m, `${clockAt(m)} · ${v}${unit}`]);
+  const segs = det.segments.map(([start, len, stage]) => [start + shift, len, stage]);
+  const ticks = [0, 1, 2, 3, 4].map((i) => clockAt((span * i) / 4));
+  const diff = isNum(hrAvg) && isNum(prevAvg) ? hrAvg - prevAvg : null;
+  const vsPrev = isNum(diff) ? (diff === 0 ? "same as the night before" : `${Math.abs(diff)} ${diff < 0 ? "lower" : "higher"} than the night before`) : "";
+  const prevLabel = prev
+    ? `<span class="lab">Night before<b>avg ${isNum(prevAvg) ? prevAvg : "–"}</b>${range(prevHr)} bpm</span>${hoverable(prevSvg, 0, span, tip(prevHr, " bpm"))}`
+    : `<span class="lab">Night before</span><span class="muted small">No band readings from the night before.</span>`;
+  const usual = (cmp.hr_band || []).length
+    ? `Shaded: your usual heart rate at that time of night (middle 80% of readings over your last ${cmp.band_nights} nights with the band).`
+    : `The shaded usual range appears once there are 3 or more band nights to compare.`;
   return `<div class="lanes">
-    <span class="lab">Stages</span>${det.segments.length ? hypnogram(det.segments, length, { height: 120 }) : `<span class="muted small">No stages</span>`}
-    <span class="lab">Heart rate<b>avg ${isNum(hrAvg) ? hrAvg : "–"}</b>${range(hr)} bpm</span>${hoverable(hrSvg, 0, length, tip(hr, " bpm"))}
-    <span class="lab">Blood oxygen<b>${range(sp)}</b>%</span>${hoverable(spSvg, 0, length, tip(sp, "%"))}
-    <span class="lab">Stress<b>${st.length ? Math.round(mean(st.map((p) => p[1]))) : "–"}</b>avg</span>${hoverable(stSvg, 0, length, tip(st, ""))}
-    <span></span>${axis(nightTimes(night, length))}
+    <span class="lab">Stages</span>${segs.length ? hypnogram(segs, span, { height: 120 }) : `<span class="muted small">No stages</span>`}
+    <span class="lab">Heart rate<b>avg ${isNum(hrAvg) ? hrAvg : "–"}</b>${range(hr)} bpm</span>${hoverable(hrSvg, 0, span, tip(hr, " bpm"))}
+    ${prevLabel}
+    <span class="lab">Blood oxygen<b>${range(sp)}</b>%</span>${hoverable(spSvg, 0, span, tip(sp, "%"))}
+    <span class="lab">Stress<b>${st.length ? Math.round(mean(st.map((p) => p[1]))) : "–"}</b>avg</span>${hoverable(stSvg, 0, span, tip(st, ""))}
+    <span></span>${axis(ticks)}
+    <span></span><p class="tiny faint" style="margin:4px 0 0">${h(usual)}${vsPrev ? ` Last night's average was ${h(vsPrev)}.` : ""} Dashed lines: each night's average.</p>
   </div>`;
 }
 

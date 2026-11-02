@@ -68,21 +68,33 @@ function reviewLinks(sources) {
     .join("");
 }
 
+function reviewerLine(r) {
+  if (!r || !r.state || r.state === "not_installed") return "";
+  const seen = r.alive ? new Date(r.alive) : null;
+  const ago = seen ? Math.round((Date.now() - seen.getTime()) / 60000) : null;
+  return `<p class="tiny faint">Reviewer add-on: ${h(r.state.replace("_", " "))}${isNum(ago) ? ` · last heard from ${ago < 2 ? "just now" : `${ago} min ago`}` : ""}${r.claude_code_version ? ` · Claude Code ${h(r.claude_code_version)}` : ""}</p>`;
+}
+
 export function reviewCard(app, data, { topics = null, compact = false } = {}) {
   const latest = data && data.latest;
   const reviewer = (data && data.reviewer) || {};
   const attempt = data && data.last_attempt;
   const enabled = data ? data.enabled : false;
   const pending = attempt && attempt.status === "pending";
-  const stateText = {
-    ready: "", running: "Claude is writing a review…", no_login: "The Reviewer add-on isn't signed in to Claude.",
-    offline: "The Reviewer add-on isn't running.", not_installed: "Install the Health Hub Reviewer add-on to get a daily review.",
-    error: "The last review didn't work.", disabled: "The daily review is turned off in Health Hub's options.", unknown: "",
+  // Why a review can't be written right now, from the Reviewer add-on's own status.
+  const blocked = {
+    not_installed: "The Health Hub Reviewer add-on isn't installed, so no review can be written. Install it from Settings → Add-ons → Add-on store (Health Hub add-ons repository).",
+    offline: "The Health Hub Reviewer add-on isn't running. Start it in Settings → Add-ons → Health Hub Reviewer.",
+    no_login: "The Reviewer add-on can't find a Claude login. Sign in once in the Claude Code add-on's terminal (claude, then /login).",
+    disabled: "The daily review is turned off in Health Hub's options.",
   }[reviewer.state] || "";
-  const button = enabled ? `<button class="btn" data-action="review" ${pending ? "disabled" : ""}>${pending ? "Writing…" : "Review again"}</button>` : "";
+  const detail = reviewer.detail && reviewer.state === "error" ? ` (${reviewer.detail})` : "";
+  const waiting = reviewer.state === "running" ? "Claude is writing today's review… (usually 1 to 3 minutes)" : "Waiting for the Reviewer add-on to pick up the request…";
+  const button = enabled ? `<button class="btn" data-action="review" ${pending && !blocked ? "disabled" : ""}>${pending && !blocked ? "Writing…" : "Review again"}</button>` : "";
+  const status = blocked || (pending ? waiting : attempt && attempt.status === "error" ? `The last review didn't work: ${attempt.error || "no answer"}${detail}` : "");
   if (!latest || !latest.review) {
-    const msg = pending ? "Claude is writing today's review…" : attempt && attempt.status === "error" ? `The last review didn't work: ${attempt.error || "no answer"}` : stateText || "No review yet. One is written each morning once last night's sleep has synced.";
-    return `<section class="card" aria-label="Daily review"><div class="head"><h2>Daily review</h2>${button}</div><p class="muted small">${h(msg)}</p></section>`;
+    const msg = status || "No review yet. One is written each morning once last night's sleep has synced.";
+    return `<section class="card" aria-label="Daily review"><div class="head"><h2>Daily review</h2>${button}</div><p class="${blocked || /didn't work/.test(msg) ? "small" : "muted small"}" ${blocked || /didn't work/.test(msg) ? 'style="color:var(--amber)"' : ""}>${h(msg)}</p>${reviewerLine(reviewer)}</section>`;
   }
   const r = latest.review;
   const when = latest.finished ? new Date(latest.finished) : null;

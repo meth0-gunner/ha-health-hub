@@ -127,6 +127,8 @@ def day_view(calc: Calculator, store: Store, settings: Settings, day: date, toda
         }
     night = row["night"]
     night_detail = calc.night_detail(night) if night and night["source"] == "band" else None
+    if night_detail is not None:
+        night_detail["compare"] = calc.night_compare(day)
     steps_by_day = daily_steps_all(store, calc.tz)
     start, _ = day_bounds(day, calc.tz)
     is_today = day == today
@@ -174,6 +176,14 @@ def range_view(calc: Calculator, settings: Settings, first: date, last: date) ->
     }
 
 
+def _detail_with_compare(calc: Calculator, night: dict[str, Any] | None, day: date) -> dict[str, Any] | None:
+    if not night or night["source"] != "band":
+        return None
+    detail = calc.night_detail(night)
+    detail["compare"] = calc.night_compare(day)
+    return detail
+
+
 def night_view(calc: Calculator, settings: Settings, day: date) -> dict[str, Any]:
     rows = calc.days(day, day, settings)
     row = rows[0]
@@ -184,7 +194,7 @@ def night_view(calc: Calculator, settings: Settings, day: date) -> dict[str, Any
         "naps": row["naps"],
         "readiness": row["readiness"],
         "baseline": row["baseline"],
-        "detail": calc.night_detail(night) if night and night["source"] == "band" else None,
+        "detail": _detail_with_compare(calc, night, day),
         "oxygen": insights.oxygen_rule(night, row["baseline"].get("spo2")),
     }
 
