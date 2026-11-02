@@ -27,6 +27,12 @@ main { padding: 20px 24px 56px; }
 .seg button { min-height: 36px; padding: 0 14px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); font-weight: 500; font-size: 14px; cursor: pointer; }
 .seg button[aria-pressed="true"] { background: #2A3242; color: var(--text); }
 .sync { font-size: 13px; color: var(--muted); }
+button.sync { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 12px; border-radius: 10px; border: 1px solid transparent; background: transparent; font-family: inherit; cursor: pointer; }
+button.sync:hover, button.sync:focus-visible { border-color: var(--line2, #2A303C); color: var(--text); background: #171B23; }
+button.sync[aria-busy="true"] { cursor: progress; color: var(--text); }
+.spin { width: 13px; height: 13px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: hh-spin 0.8s linear infinite; }
+@keyframes hh-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin { animation: none; border-right-color: currentColor; opacity: 0.6; } }
 .custom { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 13px; color: var(--muted); }
 input, select { font: inherit; color: var(--text); background: var(--inset); border: 1px solid var(--edge); border-radius: 10px; min-height: 40px; padding: 0 10px; }
 input[type="date"], input[type="time"] { color-scheme: dark; }

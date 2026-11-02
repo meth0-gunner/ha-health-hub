@@ -19,6 +19,9 @@ class HaClient(baseUrl: String, private val token: String) {
 
     fun postBatch(batch: JSONObject): JSONObject = request("POST", "$base/batch", batch)
 
+    /** Tell Home Assistant a sync run finished, so Sync now on the Health page knows. */
+    fun postDone(report: JSONObject): JSONObject = request("POST", "$base/done", report)
+
     private fun request(method: String, url: String, body: JSONObject?): JSONObject {
         val conn = try {
             URL(url).openConnection() as HttpURLConnection

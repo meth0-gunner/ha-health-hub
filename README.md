@@ -101,6 +101,20 @@ Readiness, sleep score, day load and energy are Health Hub's own calculations
 (`core/metrics.py`); the band's readings are estimates, not medical
 measurements.
 
+## Sync now
+
+The "Synced … ago" button at the top of the Health page asks your phone to sync
+straight away: the Health Hub app tells Gadgetbridge to fetch from the band and
+export, then sends the new data (about a minute). It needs:
+
+1. The Home Assistant Companion app on the phone (Health Hub reaches the phone
+   through it). If more than one phone has it, choose yours in Health Hub's
+   options (Configure → Settings → Phone for Sync now).
+2. In Gadgetbridge: Settings → Intent API → allow activity sync and database
+   export through the Intent API.
+
+The `health_hub.sync_now` action does the same from automations.
+
 ## Daily review
 
 Each morning, once last night's sleep has synced, Health Hub asks Claude for a

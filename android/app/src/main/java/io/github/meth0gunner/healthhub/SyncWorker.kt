@@ -21,31 +21,61 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         val settings = AppSettings(applicationContext)
         val force = inputData.getBoolean(KEY_FORCE, false)
+        val fresh = inputData.getBoolean(KEY_FRESH, false)
         settings.lastAttempt = System.currentTimeMillis()
-        try {
-            val report = SyncEngine(applicationContext, settings).run(force)
+        var gadgetbridge: String? = null
+        val outcome = try {
+            if (fresh && settings.isConfigured) {
+                // Fetch from the band and export first, so the sync sends what's on the band now.
+                val folder = settings.exportFolder
+                gadgetbridge = GadgetbridgeTrigger(applicationContext).syncAndExport {
+                    folder?.let { ExportFile(applicationContext, it, settings.exportFileName) }
+                        ?.takeIf { it.exists }?.version
+                }.text
+            }
+            val report = SyncEngine(applicationContext, settings).run(force || fresh)
             settings.lastSuccess = System.currentTimeMillis()
             settings.lastResult = when {
                 report.skipped -> "Export unchanged since the last sync; nothing to send."
                 report.rowsByTable.isEmpty() -> "Up to date; nothing new."
                 else -> "Sent ${report.totalRows} rows: " +
                     report.rowsByTable.entries.joinToString { "${friendly(it.key)} ${it.value}" }
-            }
-            Result.success()
+            } + (gadgetbridge?.let { " (Gadgetbridge: $it)" } ?: "")
+            true to Result.success()
         } catch (e: ConfigException) {
             settings.lastResult = "Needs attention: ${e.message}"
-            Result.failure()
+            false to Result.failure()
         } catch (e: RetryableException) {
             settings.lastResult = "Will retry: ${e.message}"
-            if (runAttemptCount < 3) Result.retry() else Result.failure()
+            false to if (runAttemptCount < 3 && !fresh) Result.retry() else Result.failure()
         } catch (e: Exception) {
             settings.lastResult = "Error: ${e.javaClass.simpleName}: ${e.message}"
-            Result.failure()
+            false to Result.failure()
+        }
+        reportDone(settings, outcome.first, fresh, gadgetbridge)
+        outcome.second
+    }
+
+    /** Best effort: tell Home Assistant this run finished (the Health page waits for it). */
+    private fun reportDone(settings: AppSettings, ok: Boolean, fresh: Boolean, gadgetbridge: String?) {
+        if (settings.haUrl.isEmpty() || settings.token.isEmpty()) return
+        try {
+            HaClient(settings.haUrl, settings.token).postDone(
+                org.json.JSONObject()
+                    .put("ok", ok)
+                    .put("fresh", fresh)
+                    .put("result", settings.lastResult)
+                    .put("gadgetbridge", gadgetbridge ?: org.json.JSONObject.NULL)
+                    .put("app_version", BuildConfig.VERSION_NAME)
+            )
+        } catch (e: Exception) {
+            // An older Health Hub without this endpoint, or HA unreachable: nothing to do.
         }
     }
 
     companion object {
         private const val KEY_FORCE = "force"
+        private const val KEY_FRESH = "fresh"
         const val PERIODIC = "health_hub_hourly"
         const val NOW = "health_hub_now"
 
@@ -67,11 +97,15 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             }
         }
 
-        /** Sync once now, sending everything new even if the export looks unchanged. */
+        /**
+         * Sync once now: ask Gadgetbridge to fetch from the band and export,
+         * then send everything new. Used by the Sync now button here and by
+         * Sync now on the Health page (through [SyncNowReceiver]).
+         */
         fun runNow(context: Context) {
             val request = OneTimeWorkRequestBuilder<SyncWorker>()
                 .setConstraints(networkNeeded)
-                .setInputData(workDataOf(KEY_FORCE to true))
+                .setInputData(workDataOf(KEY_FORCE to true, KEY_FRESH to true))
                 .build()
             WorkManager.getInstance(context).enqueueUniqueWork(NOW, ExistingWorkPolicy.KEEP, request)
         }

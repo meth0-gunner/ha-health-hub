@@ -89,6 +89,24 @@ class SyncBatchView(_BaseView):
         return self.json(result)
 
 
+class SyncDoneView(_BaseView):
+    """The phone reports that a sync run finished, even when nothing was new."""
+
+    url = "/api/health_hub/sync/done"
+    name = "api:health_hub:sync_done"
+
+    async def post(self, request: web.Request) -> web.Response:
+        _hass, hub, error = self._check(request)
+        if error:
+            return error
+        try:
+            payload = await request.json()
+        except ValueError:
+            payload = {}
+        hub.note_phone_check(payload if isinstance(payload, dict) else {})
+        return self.json({"ok": True})
+
+
 @websocket_api.websocket_command(
     {
         vol.Required("type"): "health_hub/samples",
@@ -160,5 +178,6 @@ async def ws_review(
 def async_register_api(hass: HomeAssistant) -> None:
     hass.http.register_view(SyncPlanView())
     hass.http.register_view(SyncBatchView())
+    hass.http.register_view(SyncDoneView())
     websocket_api.async_register_command(hass, ws_samples)
     websocket_api.async_register_command(hass, ws_review)

@@ -55,6 +55,7 @@ class App:
         self.calc = Calculator(self.store, self.tz)
         self.fixed_today = date.fromisoformat(today) if today else None
         self.review = json.loads(Path(review).read_text()) if review else None
+        self.sync_requested: float | None = None  # pretend the phone answers 5 seconds later
 
     def today(self) -> date:
         return self.fixed_today or datetime.now(self.tz).date()
@@ -68,6 +69,12 @@ class App:
             return {
                 "version": "preview", "time_zone": str(self.tz), "today": today.isoformat(),
                 "first_date": None, "last_sync": datetime.now().astimezone().isoformat(), "last_reading": None,
+                "sync_phone": "mobile_app_preview_phone",
+                "last_check": (
+                    {"at": datetime.fromtimestamp(self.sync_requested + 5).astimezone().isoformat(),
+                     "result": "Sent 42 rows: minutes 40, days 1, battery 1", "ok": True, "fresh": True}
+                    if self.sync_requested and time.time() > self.sync_requested + 5 else None
+                ),
                 "settings": views.settings_view(s), "sources": views.sources_view(),
             }
         if t == "health_hub/day":
@@ -100,6 +107,9 @@ class App:
             return views.weight_view(self.store, s, self.tz)
         if t == "health_hub/review":
             return self.review or {"enabled": True, "reviewer": {"state": "not_installed"}, "latest": None, "last_attempt": None}
+        if t == "health_hub/sync/request":
+            self.sync_requested = time.time()
+            return {"requested": datetime.now().astimezone().isoformat(), "phone": "mobile_app_preview_phone"}
         if t == "service":
             return {}
         raise ValueError(f"unknown command {t}")

@@ -9,13 +9,22 @@ import voluptuous as vol
 from homeassistant.components.file_upload import process_uploaded_file
 from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult, OptionsFlow
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.selector import FileSelector, FileSelectorConfig, TimeSelector
+from homeassistant.helpers.selector import (
+    FileSelector,
+    FileSelectorConfig,
+    SelectOptionDict,
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
+    TimeSelector,
+)
 
 from .const import (
     CONF_OVERLAP_HOURS,
     CONF_RETENTION_DAYS,
     CONF_REVIEW_ENABLED,
     CONF_REVIEW_TIME,
+    CONF_SYNC_PHONE,
     DEFAULT_OVERLAP_HOURS,
     DEFAULT_RETENTION_DAYS,
     DEFAULT_REVIEW_ENABLED,
@@ -56,10 +65,20 @@ class HealthHubOptionsFlow(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         if user_input is not None:
+            if user_input.get(CONF_SYNC_PHONE) == "none":
+                user_input.pop(CONF_SYNC_PHONE)
             return self.async_create_entry(data=user_input)
         options = self.config_entry.options
+        phones = sorted(s for s in self.hass.services.async_services().get("notify", {}) if s.startswith("mobile_app_"))
+        phone_choices = [SelectOptionDict(value="none", label="Not set")] + [
+            SelectOptionDict(value=p, label=p.removeprefix("mobile_app_").replace("_", " ")) for p in phones
+        ]
         schema = vol.Schema(
             {
+                vol.Required(
+                    CONF_SYNC_PHONE,
+                    default=options.get(CONF_SYNC_PHONE) if options.get(CONF_SYNC_PHONE) in phones else (phones[0] if len(phones) == 1 else "none"),
+                ): SelectSelector(SelectSelectorConfig(options=phone_choices, mode=SelectSelectorMode.DROPDOWN)),
                 vol.Required(
                     CONF_RETENTION_DAYS,
                     default=options.get(CONF_RETENTION_DAYS, DEFAULT_RETENTION_DAYS),

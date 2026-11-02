@@ -84,6 +84,9 @@ async def _info(hass, hub, msg):
         "today": _today().isoformat(),
         "first_date": dt_util.as_local(dt_util.utc_from_timestamp(first)).date().isoformat() if first else None,
         "last_sync": snap.last_sync.isoformat() if snap.last_sync else None,
+        "last_check": hub.last_check,
+        "sync_requested": hub.sync_requested.isoformat() if hub.sync_requested else None,
+        "sync_phone": hub.sync_phone(),
         "last_reading": snap.last_reading_ts,
         "settings": views.settings_view(settings),
         "sources": views.sources_view(),
@@ -162,6 +165,10 @@ async def _weight_log(hass, hub, msg):
     return await hass.async_add_executor_job(views.weight_view, hub.store, settings, hub.calc.tz)
 
 
+async def _sync_request(hass, hub, msg):
+    return await hub.async_request_sync()
+
+
 async def _weight_delete(hass, hub, msg):
     await hub.async_delete_weight(int(msg["ts"]))
     settings = await hass.async_add_executor_job(hub.settings)
@@ -199,6 +206,7 @@ COMMANDS = [
         _weight_log,
     ),
     _command({vol.Required("type"): "health_hub/weight/delete", vol.Required("ts"): int}, _weight_delete),
+    _command({vol.Required("type"): "health_hub/sync/request"}, _sync_request),
 ]
 
 

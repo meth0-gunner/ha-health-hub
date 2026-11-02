@@ -25,13 +25,15 @@
           "retention_days": "Days of minute-level detail to keep",
           "overlap_hours": "Hours of recent data to re-check on each sync",
           "review_enabled": "Daily review",
-          "review_time": "Review by"
+          "review_time": "Review by",
+          "sync_phone": "Phone for Sync now"
         },
         "data_description": {
           "retention_days": "Hourly and daily history is kept for good; this only limits the minute-by-minute detail.",
           "overlap_hours": "Gadgetbridge updates some recent rows after the fact, so each sync re-reads this much.",
           "review_enabled": "Each morning, once last night's sleep has synced, ask the Health Hub Reviewer add-on for a review of your figures.",
-          "review_time": "If no night has synced by this time, the review is written anyway with what there is."
+          "review_time": "If no night has synced by this time, the review is written anyway with what there is.",
+          "sync_phone": "The phone running the Health Hub app. Sync now on the Health page reaches it through the Home Assistant Companion app."
         }
       },
       "import_history": {
@@ -86,6 +88,10 @@
     "spend_reward": {
       "name": "Spend a reward",
       "description": "Takes one reward off the balance."
+    },
+    "sync_now": {
+      "name": "Sync now",
+      "description": "Asks the phone to fetch the latest data from the band and send it straight away."
     }
   },
   "entity": {

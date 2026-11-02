@@ -24,5 +24,19 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Sync now from the Health page, relayed by the HA Companion app. -->
+        <receiver
+            android:name=".SyncNowReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="io.github.meth0gunner.healthhub.SYNC_NOW" />
+            </intent-filter>
+        </receiver>
     </application>
+
+    <!-- Lets this app send Gadgetbridge its sync and export commands (Android 11+). -->
+    <queries>
+        <package android:name="nodomain.freeyourgadget.gadgetbridge" />
+    </queries>
 </manifest>

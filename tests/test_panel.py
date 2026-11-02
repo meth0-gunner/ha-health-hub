@@ -103,3 +103,36 @@ async def test_non_admin_refused(hub_entry, hass: HomeAssistant, hass_ws_client,
     ws = await hass_ws_client(hass, hass_read_only_access_token)
     reply = await _ws(ws, 1, type="health_hub/info")
     assert not reply["success"]
+
+
+async def test_sync_now(hub_entry, hass: HomeAssistant, hass_client, hass_ws_client):
+    from pytest_homeassistant_custom_component.common import async_mock_service
+
+    ws = await hass_ws_client(hass)
+    refused = await _ws(ws, 1, type="health_hub/sync/request")
+    assert not refused["success"]  # no phone with the Companion app yet
+
+    calls = async_mock_service(hass, "notify", "mobile_app_pixel")
+    asked = await _ws(ws, 2, type="health_hub/sync/request")
+    assert asked["success"], asked
+    assert asked["result"]["phone"] == "mobile_app_pixel"
+    assert calls[0].data == {
+        "message": "command_broadcast_intent",
+        "data": {
+            "intent_package_name": "io.github.meth0gunner.healthhub",
+            "intent_action": "io.github.meth0gunner.healthhub.SYNC_NOW",
+        },
+    }
+
+    # Two phones: Health Hub won't guess which one.
+    async_mock_service(hass, "notify", "mobile_app_other_phone")
+    ambiguous = await _ws(ws, 3, type="health_hub/sync/request")
+    assert not ambiguous["success"]
+    assert "Choose your phone" in ambiguous["error"]["message"]
+
+    client = await hass_client()
+    resp = await client.post("/api/health_hub/sync/done", json={"ok": True, "fresh": True, "result": "Up to date; nothing new."})
+    assert resp.status == 200
+    info = await _ws(ws, 4, type="health_hub/info")
+    assert info["result"]["last_check"]["result"] == "Up to date; nothing new."
+    assert info["result"]["sync_requested"]

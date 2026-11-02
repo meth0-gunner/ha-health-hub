@@ -73,6 +73,17 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         }),
     )
     hass.services.async_register(DOMAIN, "spend_reward", spend_reward)
+
+    async def sync_now(call: ServiceCall) -> None:
+        for hub in _hubs():
+            try:
+                await hub.async_request_sync()
+            except ValueError as err:
+                from homeassistant.exceptions import HomeAssistantError
+
+                raise HomeAssistantError(str(err)) from err
+
+    hass.services.async_register(DOMAIN, "sync_now", sync_now)
     return True
 
 

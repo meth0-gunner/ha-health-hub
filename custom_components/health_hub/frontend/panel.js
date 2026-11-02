@@ -238,9 +238,9 @@ class HealthHubPanel extends HTMLElement {
           <div class="seg" role="group" aria-label="Period">${periods}</div>
           <button class="sq" data-action="next" aria-label="Later" ${atEnd ? "disabled" : ""}>›</button>
           ${r.end !== this.info.today ? `<button class="btn" data-action="today">Today</button>` : ""}
-          <span class="sync">Synced ${h(relTime(this.info.last_sync))}</span>
+          ${this._syncButton()}
         </div>`
-      : `<div class="controls"><span class="sync">Synced ${h(relTime(this.info.last_sync))}</span></div>`;
+      : `<div class="controls">${this._syncButton()}</div>`;
     return `<header class="top">
         <div class="title">
           <button class="menu" data-action="menu" aria-label="Show the Home Assistant menu">☰</button>
@@ -250,6 +250,59 @@ class HealthHubPanel extends HTMLElement {
       </header>
       ${custom}
       <nav class="tabs" aria-label="Health pages">${tabs}</nav>`;
+  }
+
+  /** "Synced 12 min ago", which asks the phone to sync now when clicked. */
+  _syncButton() {
+    const busy = Boolean(this._syncing);
+    const label = busy ? "Syncing…" : `Synced ${relTime(this.info.last_sync)}`;
+    const title = busy
+      ? "Waiting for your phone to fetch from the band and send the data"
+      : "Sync now: ask your phone to fetch the latest data from the band";
+    return `<button class="sync" data-action="sync" title="${h(title)}" aria-label="${h(busy ? label : `${label}. Sync now`)}" ${busy ? 'aria-busy="true"' : ""}>${busy ? '<span class="spin" aria-hidden="true"></span>' : '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"></path><path d="M3 21v-5h5"></path><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"></path><path d="M21 3v5h-5"></path></svg>'}<span>${h(label)}</span></button>`;
+  }
+
+  _refreshSyncButton() {
+    for (const el of this.shadowRoot.querySelectorAll("button.sync")) el.outerHTML = this._syncButton();
+  }
+
+  async _syncNow() {
+    if (this._syncing) return;
+    let asked;
+    try {
+      asked = await this._hass.callWS({ type: "health_hub/sync/request" });
+    } catch (err) {
+      this.toast(err && err.message ? err.message : String(err), true);
+      return;
+    }
+    const since = new Date(asked.requested).getTime();
+    this._syncing = { since };
+    this._refreshSyncButton();
+    const deadline = Date.now() + 4 * 60 * 1000;
+    const done = (info) => {
+      const check = info.last_check && new Date(info.last_check.at).getTime();
+      return check && check >= since ? info.last_check : null;
+    };
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 4000));
+      try {
+        await this.refreshInfo();
+      } catch (err) {
+        continue;
+      }
+      const check = done(this.info);
+      if (check) {
+        this._syncing = null;
+        this.cache.clear();
+        this.toast(check.ok ? check.result || "Synced." : `Sync problem: ${check.result}`, !check.ok);
+        await this.render(true);
+        this._refreshSyncButton();
+        return;
+      }
+    }
+    this._syncing = null;
+    this._refreshSyncButton();
+    this.toast("Your phone didn't answer within 4 minutes. Check it's online and the Health Hub app is set up.", true);
   }
 
   _fatal(err) {
@@ -267,6 +320,11 @@ class HealthHubPanel extends HTMLElement {
     if (action === "page") {
       e.preventDefault();
       if (arg !== s.page) this.navigate({ page: arg });
+      return;
+    }
+    if (action === "sync") {
+      e.preventDefault();
+      this._syncNow();
       return;
     }
     if (action === "menu") {

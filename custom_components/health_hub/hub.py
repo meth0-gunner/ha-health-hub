@@ -17,11 +17,14 @@ from homeassistant.components.recorder.models import (
 )
 from homeassistant.components.recorder.statistics import async_add_external_statistics
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    APP_PACKAGE,
+    CONF_SYNC_PHONE,
+    SYNC_NOW_ACTION,
     CONF_OVERLAP_HOURS,
     CONF_RETENTION_DAYS,
     DEFAULT_OVERLAP_HOURS,
@@ -75,6 +78,8 @@ class HealthHub:
         self.snapshot = Snapshot()
         self._lock = asyncio.Lock()
         self.on_sleep_synced: Callable[[], None] | None = None
+        self.sync_requested: datetime | None = None
+        self.last_check: dict[str, Any] | None = None  # the phone's last "sync finished" report
         self.reviews: Any = None  # ReviewManager, set up by __init__
 
     @property
@@ -123,6 +128,53 @@ class HealthHub:
         if result.rows:
             self.calc.invalidate(result.min_ts, result.max_ts)
         return result
+
+    # ------------------------------------------------------------ sync now
+
+    def phone_services(self) -> list[str]:
+        """Notify services of phones with the HA Companion app."""
+        return sorted(s for s in self.hass.services.async_services().get("notify", {}) if s.startswith("mobile_app_"))
+
+    def sync_phone(self) -> str | None:
+        chosen = self.entry.options.get(CONF_SYNC_PHONE)
+        phones = self.phone_services()
+        if chosen and chosen in phones:
+            return chosen
+        return phones[0] if len(phones) == 1 and not chosen else None
+
+    async def async_request_sync(self) -> dict[str, Any]:
+        """Ask the phone to sync now, through the HA Companion app."""
+        phone = self.sync_phone()
+        if phone is None:
+            if not self.phone_services():
+                raise ValueError("No phone with the Home Assistant Companion app was found")
+            raise ValueError(
+                "Choose your phone first: Settings → Devices & services → Health Hub → Configure → Settings"
+            )
+        await self.hass.services.async_call(
+            "notify",
+            phone,
+            {
+                "message": "command_broadcast_intent",
+                "data": {"intent_package_name": APP_PACKAGE, "intent_action": SYNC_NOW_ACTION},
+            },
+            blocking=True,
+        )
+        self.sync_requested = dt_util.utcnow()
+        _LOGGER.info("Asked %s to sync now", phone)
+        return {"requested": self.sync_requested.isoformat(), "phone": phone}
+
+    @callback
+    def note_phone_check(self, report: dict[str, Any]) -> None:
+        """The phone finished a sync run (with or without new data)."""
+        self.last_check = {
+            "at": dt_util.utcnow().isoformat(),
+            "result": str(report.get("result") or "")[:300],
+            "fresh": bool(report.get("fresh")),
+            "gadgetbridge": str(report.get("gadgetbridge") or "")[:200] or None,
+            "ok": bool(report.get("ok", True)),
+        }
+        async_dispatcher_send(self.hass, SIGNAL_UPDATED)
 
     # ------------------------------------------------------------ statistics
 
