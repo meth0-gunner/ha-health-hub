@@ -28,6 +28,8 @@ const BY_KEY = Object.fromEntries(PAGES.map(([k, , m]) => [k, m]));
 const PERIODS = [["day", "Day"], ["week", "Week"], ["month", "Month"], ["year", "Year"], ["custom", "Custom…"]];
 const STEP = { day: 1, week: 7, month: 30, year: 365 };
 const BASE = "/health";
+// The version these files came with: they're served from /health_hub_static/<version>/.
+const FILES_VERSION = (new URL(import.meta.url).pathname.match(/\/health_hub_static\/([^/]+)\//) || [])[1] || null;
 
 class HealthHubPanel extends HTMLElement {
   constructor() {
@@ -241,7 +243,11 @@ class HealthHubPanel extends HTMLElement {
           ${this._syncButton()}
         </div>`
       : `<div class="controls">${this._syncButton()}</div>`;
-    return `<header class="top">
+    const stale = FILES_VERSION && this.info.version && FILES_VERSION !== this.info.version && this.info.version !== "preview";
+    const banner = stale
+      ? `<div class="card soft" role="status" style="flex-direction:row;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px"><span class="small">Health Hub was updated to ${h(this.info.version)}, but this page is still showing ${h(FILES_VERSION)}.</span><button class="btn" data-action="reload">Reload to update</button></div>`
+      : "";
+    return `${banner}<header class="top">
         <div class="title">
           <button class="menu" data-action="menu" aria-label="Show the Home Assistant menu">☰</button>
           <h1>Health</h1><span class="date">${h(sub)}</span>
@@ -320,6 +326,10 @@ class HealthHubPanel extends HTMLElement {
     if (action === "page") {
       e.preventDefault();
       if (arg !== s.page) this.navigate({ page: arg });
+      return;
+    }
+    if (action === "reload") {
+      location.reload();
       return;
     }
     if (action === "sync") {
