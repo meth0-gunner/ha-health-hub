@@ -10,23 +10,36 @@ let uid = 0;
 export function why(app, { rule, numbers, note, sources = [] } = {}, { key, label = "Why?", center = false, open = false } = {}) {
   const k = key || `why${uid++}`;
   const src = sourceLinks(app, sources);
+  // Footnote numbers go at the end of the last sentence they support.
+  const lines = [rule && ["", rule], numbers && ["muted", numbers], note && ["", note]].filter(Boolean);
+  const body = lines
+    .map(([cls, text], i) => `<span${cls ? ` class="${cls}"` : ""}>${h(text)}${i === lines.length - 1 ? src : ""}</span>`)
+    .join("");
   return `<details class="why${center ? " c" : ""}" data-k="${h(k)}" ${open ? "open" : ""}>
     <summary>${h(label)}</summary>
     <div class="box">
-      ${rule ? `<span>${h(rule)}</span>` : ""}
-      ${numbers ? `<span class="muted">${h(numbers)}</span>` : ""}
-      ${note ? `<span>${h(note)}</span>` : ""}
-      ${src}
+      ${body || src}
     </div>
   </details>`;
 }
 
 export function sourceLinks(app, keys) {
-  return (keys || [])
-    .map((k) => app.sources[k])
-    .filter(Boolean)
-    .map((s) => `<a class="tiny" href="${h(s.url)}" target="_blank" rel="noopener noreferrer">${h(s.title)} (${h(s.publisher)}${s.year ? ", " + h(s.year) : ""}) ↗</a>`)
-    .join("");
+  return footnotes((keys || []).map((k) => app.sources[k]).filter(Boolean));
+}
+
+/**
+ * Sources as footnote numbers. Hovering (or tapping) a number shows the full
+ * source as a link.
+ */
+export function footnotes(sources) {
+  const list = (sources || []).filter((s) => s && s.url);
+  if (!list.length) return "";
+  return `<span class="fns">${list
+    .map((s, i) => {
+      const what = `${s.title}${s.publisher ? ` (${s.publisher}${s.year ? ", " + s.year : ""})` : s.year ? ` (${s.year})` : ""}`;
+      return `<span class="fn"><button type="button" class="fn-n" aria-label="Source ${i + 1}: ${h(what)}">${i + 1}</button><span class="fn-pop" role="tooltip"><a href="${h(s.url)}" target="_blank" rel="noopener noreferrer">${h(what)} ↗</a></span></span>`;
+    })
+    .join("")}</span>`;
 }
 
 const ICONS = {
@@ -63,9 +76,7 @@ export function highlights(app, list, empty = "Nothing stands out yet. Highlight
 const LEVEL = { good: "Good", neutral: "For information", watch: "Worth watching", see_doctor: "Talk to a doctor" };
 
 function reviewLinks(sources) {
-  return (sources || [])
-    .map((s) => `<a class="tiny" href="${h(s.url)}" target="_blank" rel="noopener noreferrer">${h(s.title)}${s.publisher ? ` (${h(s.publisher)}${s.year ? ", " + h(s.year) : ""})` : ""} ↗</a>`)
-    .join("");
+  return footnotes(sources);
 }
 
 function reviewerLine(r) {
@@ -112,16 +123,15 @@ export function reviewCard(app, data, { topics = null, compact = false } = {}) {
         .map(
           (o) => `<li><span class="pill ${h(o.level)}">${h(LEVEL[o.level] || o.level)}</span>
             <span style="font-size:15px;font-weight:600">${h(o.title)}</span>
-            <span class="small soft">${h(o.detail)}</span>
-            ${o.based_on ? `<span class="tiny muted">${h(o.based_on)}</span>` : ""}
-            ${reviewLinks(o.sources)}</li>`,
+            <span class="small soft">${h(o.detail)}${o.based_on ? "" : reviewLinks(o.sources)}</span>
+            ${o.based_on ? `<span class="tiny muted">${h(o.based_on)}${reviewLinks(o.sources)}</span>` : ""}</li>`,
         )
         .join("")}</ul>`
     : compact ? `<p class="muted small">Nothing about this in today's review.</p>` : "";
   if (compact) return `<section class="card" aria-label="From today's review">${head}${obsHtml}</section>`;
   const sugg = (r.suggestions || []).length
     ? `<div style="display:flex;flex-direction:column;gap:10px"><h3>For today</h3><ul style="margin:0;padding-left:20px;display:flex;flex-direction:column;gap:8px;font-size:14px;line-height:1.5">${r.suggestions
-        .map((s) => `<li>${h(s.text)} ${s.why ? `<span class="muted">${h(s.why)}</span>` : ""} ${reviewLinks(s.sources)}</li>`)
+        .map((s) => `<li>${h(s.text)} ${s.why ? `<span class="muted">${h(s.why)}</span>` : ""}${reviewLinks(s.sources)}</li>`)
         .join("")}</ul></div>`
     : "";
   const caveats = (r.caveats || []).length ? `<ul class="tiny faint" style="margin:0;padding-left:18px">${r.caveats.map((c) => `<li>${h(c)}</li>`).join("")}</ul>` : "";

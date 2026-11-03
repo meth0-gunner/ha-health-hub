@@ -78,6 +78,18 @@ details.why { font-size: 13px; color: var(--soft); }
 details.why > summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; color: var(--link); list-style: none; }
 details.why > summary::-webkit-details-marker { display: none; }
 details.why.c > summary { justify-content: center; }
+.fns { white-space: nowrap; }
+.fn { position: relative; display: inline-block; vertical-align: super; line-height: 1; margin-left: 2px; }
+.fn-n { font: 600 11px Inter, system-ui, sans-serif; color: var(--link); background: transparent; border: 0; padding: 2px 3px; cursor: pointer; border-radius: 4px; }
+.fn-n::before { content: "["; } .fn-n::after { content: "]"; }
+.fn-n:hover, .fn-n:focus-visible { background: #262D3A; outline: none; }
+/* The pop-up sits below the number, with a transparent strip so the pointer can move into it. */
+.fn-pop { display: none; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); padding-top: 6px; z-index: 20; width: max-content; max-width: min(340px, 80vw); white-space: normal; vertical-align: baseline; }
+.fn-pop a { display: block; background: #262D3A; border: 1px solid #343C4B; border-radius: 10px; padding: 8px 10px; font-size: 12px; line-height: 1.45; color: var(--link); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35); }
+.fn-pop a:hover { color: var(--text); }
+.fn:hover .fn-pop, .fn:focus-within .fn-pop { display: block; }
+.fn-pop.left { left: auto; right: -6px; transform: none; }
+.fn-pop.right { left: -6px; transform: none; }
 details.why .box { background: var(--inset); border: 1px solid #262D3A; border-radius: 12px; padding: 12px 14px; line-height: 1.5; display: flex; flex-direction: column; gap: 6px; }
 
 /* buttons */

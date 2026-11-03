@@ -42,6 +42,20 @@ class HealthHubPanel extends HTMLElement {
     this.shadowRoot.addEventListener("click", (e) => this._onClick(e));
     this.shadowRoot.addEventListener("submit", (e) => this._onSubmit(e));
     this.shadowRoot.addEventListener("mousemove", (e) => this._onHover(e));
+    // Keep footnote pop-ups inside the window.
+    const placeFootnote = (e) => {
+      const fn = e.target.closest && e.target.closest(".fn");
+      if (!fn) return;
+      const pop = fn.querySelector(".fn-pop");
+      pop.classList.remove("left", "right");
+      requestAnimationFrame(() => {
+        const r = pop.getBoundingClientRect();
+        if (r.right > window.innerWidth - 8) pop.classList.add("left");
+        else if (r.left < 8) pop.classList.add("right");
+      });
+    };
+    this.shadowRoot.addEventListener("mouseover", placeFootnote);
+    this.shadowRoot.addEventListener("focusin", placeFootnote);
     this.shadowRoot.addEventListener("mouseleave", () => this._hideTips(), true);
   }
 
