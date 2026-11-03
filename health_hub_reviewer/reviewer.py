@@ -30,7 +30,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-VERSION = "0.1.0"
+VERSION = "0.1.1"
 ROOT = Path(os.environ.get("HH_ROOT", "/homeassistant"))
 DATA = Path(os.environ.get("HH_DATA", "/data"))
 CLAUDE = os.environ.get("HH_CLAUDE_BIN", "claude")
@@ -212,7 +212,17 @@ def run_review(request: dict[str, Any], opts: dict[str, Any]) -> dict[str, Any]:
     response["cost_usd"] = envelope.get("total_cost_usd")
     response["num_turns"] = envelope.get("num_turns")
     if envelope.get("is_error") or envelope.get("subtype") not in (None, "success"):
-        response["error"] = f"Claude reported a problem: {envelope.get('subtype') or text[:300]}"
+        # Claude Code marks failures like an expired login or a usage limit with
+        # is_error, a "success" subtype and the reason as the result text.
+        reason = " ".join(text.split())[:300]
+        subtype = envelope.get("subtype")
+        if subtype and subtype != "success":
+            reason = f"{subtype}: {reason}" if reason else subtype
+        status = envelope.get("api_error_status")
+        if status:
+            reason = f"{reason} (HTTP {status})" if reason else f"HTTP {status}"
+        response["error"] = f"Claude reported a problem: {reason or 'no details given'}"
+        log(f"Claude Code reply: {proc.stdout.strip()[:1000]}")
         return response
     try:
         response["review"] = extract_json(text)

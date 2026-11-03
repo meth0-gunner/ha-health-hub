@@ -1,6 +1,6 @@
 name: Health Hub Reviewer
 description: Writes Health Hub's daily review with Claude, using the Claude Code add-on's existing login
-version: "0.1.0"
+version: "0.1.1"
 slug: health_hub_reviewer
 url: https://github.com/meth0-gunner/ha-health-hub
 arch:

@@ -24,8 +24,9 @@ answer = {
     "ok": 'Here you go:\n```json\n{"headline": "Good night", "items": []}\n```',
     "bare": 'Sure. {"headline": "Bare"} Done.',
     "prose": "Sorry, no JSON here",
+    "login": "Invalid API key · Please run /login",
 }[mode]
-result = {"type": "result", "subtype": "success", "is_error": False,
+result = {"type": "result", "subtype": "success", "is_error": mode == "login",
           "result": answer, "total_cost_usd": 0.12, "num_turns": 4}
 print(json.dumps([{"type": "system"}, result] if mode == "bare" else result))
 '''
@@ -114,7 +115,7 @@ def test_bare_json_in_verbose_output(addon):
     assert run("bare")["response"]["review"] == {"headline": "Bare"}
 
 
-@pytest.mark.parametrize(("mode", "needle"), [("crash", "code 3"), ("prose", "expected format")])
+@pytest.mark.parametrize(("mode", "needle"), [("crash", "code 3"), ("prose", "expected format"), ("login", "Please run /login")])
 def test_failures_are_reported(addon, mode, needle):
     request, run, _ = addon
     request("r4")
