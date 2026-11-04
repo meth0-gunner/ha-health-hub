@@ -296,26 +296,98 @@ def has_enough_data(summary: dict[str, Any]) -> bool:
     )
 
 
+# -------------------------------------------------------- day-by-day context
+
+CONTEXT_DAYS = 21
+
+
+def recent_context(calc: Any, store: Store, settings: Any, today: date) -> dict[str, Any]:
+    """The last three weeks day by day, the goals and the training block.
+
+    Lets Claude look for trends and for links in the owner's own data (late
+    nights and the next day's readiness, training and sleep, and so on).
+    `calc` is a metrics.Calculator and `settings` a settings.Settings.
+    """
+    from . import training  # here, to keep this module light for the add-on tests
+
+    rows = calc.days(today - timedelta(days=CONTEXT_DAYS - 1), today, settings)
+    logs = store.training_between((today - timedelta(days=CONTEXT_DAYS - 1)).isoformat(), today.isoformat())
+    by_day: dict[str, list[str]] = {}
+    for log in logs:
+        by_day.setdefault(log["day"], []).append(
+            f"gym ({log['variant']})" if log["kind"] == "gym" and log.get("variant") else log["kind"]
+        )
+    days = []
+    for r in rows:
+        n = r.get("night") or {}
+        o = n.get("overnight") or {}
+        day = {
+            "date": r["date"],
+            "weekday": date.fromisoformat(r["date"]).strftime("%a"),
+            "data_from": "band" if r.get("sources") == ["band"] else "fitbit" if r.get("sources") == ["imported"] else "mixed" if r.get("sources") else None,
+            "steps": r.get("steps"),
+            "active_min": r.get("active_min"),
+            "day_load": r.get("load"),
+            "readiness": r.get("readiness"),
+            "resting_hr": r.get("rhr"),
+            "stress_avg": r.get("stress_avg"),
+            "peak_hr": r.get("peak_hr"),
+            "training": by_day.get(r["date"], []),
+        }
+        if n:
+            day["night_before"] = {
+                "asleep": n.get("bed"), "woke": n.get("wake"),
+                "asleep_min": n.get("asleep_min"), "deep_min": n.get("deep_min"), "rem_min": n.get("rem_min"),
+                "awake_min": n.get("awake_min"), "sleep_score": n.get("score"),
+                "hr_avg": o.get("hr_avg"), "hr_lowest": o.get("hr_min"), "stress_avg": o.get("stress_avg"),
+                "spo2_avg": o.get("spo2_avg"),
+            }
+        if r.get("nap_min"):
+            day["nap_min"] = r["nap_min"]
+        days.append(day)
+    block = training.state(store, settings, today, today)
+    return {
+        "owner": {"age": settings.age} if getattr(settings, "age", None) else {},
+        "goals": {
+            "steps_a_day": settings.steps_goal,
+            "sleep_a_night_min": settings.sleep_goal_min,
+            "in_bed_by": settings.bed_target,
+            "wake_at": settings.wake_target,
+            "weight_kg": settings.weight_goal_kg,
+            "gym_sessions_a_week": settings.gym_per_week,
+            "compex_sessions_a_week": settings.compex_per_week,
+        },
+        "training_block": {
+            "from": block["block"]["first"], "to": block["block"]["last"], "days_left": block["block"]["days_left"],
+            "gym": f"{block['gym']['count']} of {block['gym']['target']} ({block['gym']['text']})",
+            "compex": f"{block['compex']['count']} of {block['compex']['target']} ({block['compex']['text']})",
+            "rewards": "3 rewards if both targets are hit by the end of the block, 1 if one is",
+        },
+        "days": days,
+    }
+
+
 # ----------------------------------------------------------------------- prompt
 
 ANSWER_SHAPE = {
-    "headline": "One calm sentence, at most 90 characters.",
-    "summary": "Two to four sentences on the night and the day ahead.",
+    "headline": "The single most useful takeaway for today, at most 90 characters. An insight or an action, not a statistic.",
+    "summary": "Two or three sentences of analysis: what's working, what's slipping, and the one change that would help most.",
     "observations": [
         {
             "topic": "one of: " + ", ".join(TOPICS),
-            "title": "A few words.",
-            "detail": "One to three sentences, with the numbers it rests on.",
+            "title": "The insight in a few words (for example 'Late nights are costing you recovery').",
+            "detail": "The pattern and why it matters, in one to three sentences. Quote only the one or two numbers that prove it.",
+            "action": "What to do about it, or to keep doing: one concrete sentence.",
             "level": "one of: " + ", ".join(LEVELS),
-            "based_on": "What it is compared with: the owner's baseline, a guideline, or both.",
+            "based_on": "How sure this is: the days it rests on, and what it is compared with.",
             "sources": [{"title": "Page title", "publisher": "Organisation or journal", "year": 2024, "url": "https://..."}],
         }
     ],
     "suggestions": [
-        {"text": "Something concrete to do today.", "why": "One sentence.", "sources": ["same shape as above"]}
+        {"text": "Something specific to do today or tonight, tied to an observation.", "why": "One sentence.", "sources": ["same shape as above"]}
     ],
     "bedtime": {"suggested": "HH:MM or null", "why": "One sentence."},
-    "caveats": ["Anything the owner should know about the data's limits today."],
+    "caveats": ["Only a caveat that changes how to read today's review. Usually none."],
 }
 
 PROMPT = """You are writing the morning review for a personal health dashboard in Home \
@@ -337,25 +409,53 @@ artefacts; judge patterns, not one reading.
 - "fitbit_history" comes from the owner's previous Fitbit. It may overlap the \
 band's first weeks, and it is background, not today's data. Days marked source \
 "imported" also come from the Fitbit; "worn_hours" is only known for band days.
+- "readiness", "sleep_score" and "day_load" are Health Hub's own 0-100 scores \
+(readiness: sleep, resting heart rate, overnight stress, sleep timing and the \
+previous day's load against the owner's own 30-day figures). On Fitbit days they \
+are worked out from the Fitbit's figures, with fewer inputs.
+- "training" lists the sessions the owner logged on the Health page; logging \
+started with the current training block, so earlier days show none.
 - Missing values (null) mean no data, not zero.
 
+## What the owner wants
+Insight and analysis, not a recital of figures. The owner already sees every \
+number on the Health page, so repeating them adds nothing. Tell them only what \
+is useful and actionable:
+- Trends over days and weeks: what is improving, what is slipping, and how fast.
+- Links in their own data: for example late nights and the next day's \
+readiness, training days and that night's sleep, busy or stressful days and \
+overnight heart rate, naps and the following night. Use "days" (each day's \
+figures, with the night before it) to look for these.
+- What to avoid, what to keep doing and what to change, with the one change \
+that would help most first.
+- Progress against their goals and the training block, and what it would take \
+to hit them.
+Each observation must answer "so what?" and end with an action. Two to four \
+observations at most, the most important first. If nothing stands out today, \
+say so in a sentence rather than filling space with routine figures.
+
 ## How to write it
-1. Compare with the owner's own recent figures first (the 7, 14 and 30 day \
-averages), then with population guidance.
-2. Check each health statement against current, reputable evidence using web \
-search, opening the pages where you can: clinical guidelines, major health bodies \
-and peer-reviewed research, preferably from the last ten years. Cite the sources \
-you relied on, with links taken from the pages or search results you saw; never \
-write a link from memory. If you could not verify something, leave it out.
-3. Do not diagnose. If the data shows a pattern that is worth raising with a \
-doctor, say so plainly, use level "see_doctor" and explain why. Do not reassure \
-without evidence either: anything called normal must say compared with what.
-4. Use only numbers from the summary. If there is too little data to judge \
-(for example only a few nights so far), say that instead of guessing.
-5. Keep it short, calm and practical: two to five observations, at most three \
-suggestions, each something that can be done today.
-6. If there is a last night, suggest a bedtime for tonight with a reason, \
+1. Judge against the owner's own recent pattern first, then population guidance.
+2. Say how sure a pattern is: how many days or nights it rests on. With only a \
+few days of band data, say a pattern is early and what would confirm it; don't \
+present a single night as a trend.
+3. Check each health claim against current, reputable evidence using web \
+search, opening the pages where you can: clinical guidelines, major health \
+bodies and peer-reviewed research, preferably from the last ten years. Cite the \
+sources you relied on, with links taken from the pages or search results you \
+saw; never write a link from memory. If you could not verify a claim, leave it \
+out. Patterns in the owner's own data need no citation.
+4. Do not diagnose. If the data shows something worth raising with a doctor, say \
+so plainly, use level "see_doctor" and explain why. Do not reassure without \
+evidence either.
+5. Use only numbers from the summary; never invent or estimate figures.
+6. Suggestions: at most three, specific to today or tonight and tied to an \
+observation. No generic advice (drink water, get some sleep) unless the data \
+points to it.
+7. If there is a last night, suggest a bedtime for tonight with a reason, \
 otherwise set "bedtime" to null.
+8. Caveats only when they change how to read today's review; usually leave \
+the list empty.
 
 ## Answer
 Reply with a single JSON object and nothing else, in this shape:
@@ -424,6 +524,7 @@ def parse_review(answer: Any) -> dict[str, Any]:
                 "topic": topic,
                 "title": title,
                 "detail": detail,
+                "action": _text(o.get("action"), 300),
                 "level": level,
                 "based_on": _text(o.get("based_on"), 300),
                 "sources": _sources(o.get("sources")),

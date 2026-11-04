@@ -43,6 +43,7 @@ from .core.review import (
     build_summary,
     main_sleep,
     parse_review,
+    recent_context,
     sleeps_by_day,
 )
 
@@ -165,12 +166,24 @@ class ReviewManager:
 
     # ---------------------------------------------------------------- request
 
+    def _context(self) -> dict[str, Any] | None:
+        """Day-by-day figures, goals and training for trends (best effort)."""
+        try:
+            from .core import settings as settings_mod
+
+            settings = settings_mod.load(self.hub.store)
+            return recent_context(self.hub.calc, self.hub.store, settings, dt_util.now().date())
+        except Exception:  # noqa: BLE001 - the review still works without it
+            _LOGGER.exception("Could not add the day-by-day figures to the review")
+            return None
+
     async def async_request(self, reason: str = "manual") -> str:
         """Write a review request for the add-on and remember it."""
         tz = dt_util.get_default_time_zone()
         now = int(time.time())
+        extra = await self.hass.async_add_executor_job(self._context)
         summary = await self.hass.async_add_executor_job(
-            build_summary, self.hub.store, tz, now, None
+            build_summary, self.hub.store, tz, now, extra
         )
         review_id = f"{summary['date']}-{now}"
         request = {

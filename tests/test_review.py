@@ -180,6 +180,7 @@ async def test_review_round_trip(hub_entry, hass: HomeAssistant, hass_ws_client)
     request = json.loads((_review_dir(hass) / "request.json").read_text())
     assert request["reason"] == "manual"
     assert "## Summary" in request["prompt"]
+    assert '"training_block"' in request["prompt"] and '"days"' in request["prompt"]  # day-by-day context
 
     _answer(hass, request["id"])
     await _poll(hass)

@@ -124,6 +124,7 @@ export function reviewCard(app, data, { topics = null, compact = false } = {}) {
           (o) => `<li><span class="pill ${h(o.level)}">${h(LEVEL[o.level] || o.level)}</span>
             <span style="font-size:15px;font-weight:600">${h(o.title)}</span>
             <span class="small soft">${h(o.detail)}${o.based_on ? "" : reviewLinks(o.sources)}</span>
+            ${o.action ? `<span class="small" style="color:var(--text)"><span aria-hidden="true">→ </span>${h(o.action)}</span>` : ""}
             ${o.based_on ? `<span class="tiny muted">${h(o.based_on)}${reviewLinks(o.sources)}</span>` : ""}</li>`,
         )
         .join("")}</ul>`
