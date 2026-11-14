@@ -106,6 +106,9 @@ details.why .box { background: var(--inset); border: 1px solid #262D3A; border-r
 .tag { font-size: 12px; color: var(--muted); border: 1px solid var(--edge); border-radius: 999px; padding: 3px 10px; }
 
 /* longevity */
+.measure-forms { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; align-items: start; }
+.measure-forms form { align-content: start; }
+.measure-forms .btn { justify-self: start; }
 .lv-areas { display: flex; flex-direction: column; gap: 20px; }
 .lv-title { font-size: 18px; color: var(--text); }
 .lv-pill { font-size: 12px; font-weight: 600; border-radius: 999px; padding: 3px 10px; white-space: nowrap; }

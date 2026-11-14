@@ -97,4 +97,34 @@ SOURCES: dict[str, dict[str, object]] = {
         "year": 2021,
         "url": "https://doi.org/10.5534/wjmh.200055",
     },
+    "who_bmi": {
+        "title": "Obesity and overweight (fact sheet)",
+        "publisher": "World Health Organization",
+        "year": 2025,
+        "url": "https://www.who.int/news-room/fact-sheets/detail/obesity-and-overweight",
+    },
+    "waist_action": {
+        "title": "Waist circumference action levels in the identification of cardiovascular risk factors",
+        "publisher": "BMJ (Han et al.)",
+        "year": 1995,
+        "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC2544423/",
+    },
+    "bp_2025": {
+        "title": "New high blood pressure guideline emphasizes prevention, early treatment to reduce CVD risk",
+        "publisher": "American College of Cardiology and American Heart Association",
+        "year": 2025,
+        "url": "https://www.acc.org/About-ACC/Press-Releases/2025/08/13/20/03/New-high-blood-pressure-guideline-emphasizes-prevention-early-treatment-to-reduce-CVD-risk",
+    },
+    "ada_diagnosis": {
+        "title": "Diagnosis and classification of diabetes: Standards of Care in Diabetes 2025",
+        "publisher": "Diabetes Care (American Diabetes Association)",
+        "year": 2025,
+        "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC11635041/",
+    },
+    "ncep_atp3": {
+        "title": "Cholesterol treatment guidelines update (NCEP Adult Treatment Panel III)",
+        "publisher": "American Family Physician",
+        "year": 2002,
+        "url": "https://www.aafp.org/pubs/afp/issues/2002/0301/p871.html",
+    },
 }

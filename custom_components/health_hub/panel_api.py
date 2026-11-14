@@ -6,6 +6,9 @@
     health_hub/night          one night in full (Sleep page)
     health_hub/sleep_history  sleep by month since records began
     health_hub/longevity      long-term habits against published guidance
+    health_hub/measures       waist, blood pressure and blood tests entered by hand
+    health_hub/measure/log    add one
+    health_hub/measure/delete remove one
     health_hub/walk_test/log     add a 1-mile walk test
     health_hub/walk_test/delete  remove a walk test
     health_hub/settings/set   change goals and settings
@@ -27,7 +30,8 @@ from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.util import dt as dt_util
 
-from .core import fitness, longevity, training, views
+from .core import body, fitness, longevity, training, views
+from .core.body import BodyError
 from .core.fitness import FitnessError
 from .core.settings import SettingsError
 from .core.training import TrainingError
@@ -61,7 +65,7 @@ def _command(schema: dict, handler):
             return
         try:
             result = await handler(hass, hub, msg)
-        except (SettingsError, TrainingError, FitnessError, vol.Invalid, ValueError) as err:
+        except (SettingsError, TrainingError, FitnessError, BodyError, vol.Invalid, ValueError) as err:
             connection.send_error(msg["id"], "invalid", str(err))
             return
         connection.send_result(msg["id"], result)
@@ -126,6 +130,34 @@ async def _sleep_history(hass, hub, msg):
 async def _longevity(hass, hub, msg):
     settings = await hass.async_add_executor_job(hub.settings)
     return await hass.async_add_executor_job(longevity.longevity_view, hub.calc, hub.store, settings, _today())
+
+
+def _measures_view(store, tz):
+    return {"definitions": body.definitions(), "entries": body.all_entries(store, tz)}
+
+
+async def _measures(hass, hub, msg):
+    return await hass.async_add_executor_job(_measures_view, hub.store, dt_util.get_default_time_zone())
+
+
+def _morning_ts(day: date) -> int:
+    if day == _today():
+        return int(time.time())
+    noon = datetime.combine(day, datetime.min.time(), dt_util.get_default_time_zone()) + timedelta(hours=8)
+    return int(noon.timestamp())
+
+
+async def _measure_log(hass, hub, msg):
+    day = _date(msg["date"]) if msg.get("date") else _today()
+    if day > _today():
+        raise ValueError("can't add a measurement in the future")
+    await hass.async_add_executor_job(body.log, hub.store, msg["key"], _morning_ts(day), msg["value"], msg.get("value2"))
+    return await _measures(hass, hub, msg)
+
+
+async def _measure_delete(hass, hub, msg):
+    await hass.async_add_executor_job(body.delete, hub.store, msg["key"], int(msg["ts"]))
+    return await _measures(hass, hub, msg)
 
 
 async def _walk_test_log(hass, hub, msg):
@@ -214,6 +246,21 @@ COMMANDS = [
             vol.Optional("hr"): vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=60, max=230))),
         },
         _walk_test_log,
+    ),
+    _command({vol.Required("type"): "health_hub/measures"}, _measures),
+    _command(
+        {
+            vol.Required("type"): "health_hub/measure/log",
+            vol.Required("key"): vol.In(list(body.MEASURES)),
+            vol.Required("value"): vol.Coerce(float),
+            vol.Optional("value2"): vol.Any(None, vol.Coerce(float)),
+            vol.Optional("date"): str,
+        },
+        _measure_log,
+    ),
+    _command(
+        {vol.Required("type"): "health_hub/measure/delete", vol.Required("key"): vol.In(list(body.MEASURES)), vol.Required("ts"): int},
+        _measure_delete,
     ),
     _command({vol.Required("type"): "health_hub/walk_test/delete", vol.Required("ts"): int}, _walk_test_delete),
     _command({vol.Required("type"): "health_hub/settings/set", vol.Required("changes"): dict}, _settings_set),

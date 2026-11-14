@@ -25,7 +25,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from custom_components.health_hub.core import settings as settings_mod  # noqa: E402
-from custom_components.health_hub.core import fitness, longevity, training, views  # noqa: E402
+from custom_components.health_hub.core import body, fitness, longevity, training, views  # noqa: E402
 from custom_components.health_hub.core.metrics import Calculator  # noqa: E402
 from custom_components.health_hub.core.store import Store  # noqa: E402
 
@@ -88,6 +88,15 @@ class App:
             return views.long_term_sleep(self.calc, s, today)
         if t == "health_hub/longevity":
             return longevity.longevity_view(self.calc, self.store, s, today)
+        if t == "health_hub/measures":
+            return {"definitions": body.definitions(), "entries": body.all_entries(self.store, self.tz)}
+        if t == "health_hub/measure/log":
+            ts = int(datetime.combine(d("date"), datetime.min.time(), self.tz).timestamp()) + 8 * 3600
+            body.log(self.store, msg["key"], ts, msg["value"], msg.get("value2"))
+            return {"definitions": body.definitions(), "entries": body.all_entries(self.store, self.tz)}
+        if t == "health_hub/measure/delete":
+            body.delete(self.store, msg["key"], int(msg["ts"]))
+            return {"definitions": body.definitions(), "entries": body.all_entries(self.store, self.tz)}
         if t == "health_hub/walk_test/log":
             ts = fitness.finish_ts(d("date"), msg["finish"], self.tz)
             fitness.log_walk_test(self.store, ts, int(msg["minutes"]) * 60 + int(msg.get("seconds") or 0), msg.get("hr"))

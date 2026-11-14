@@ -16,6 +16,7 @@ from datetime import date, datetime, time, timedelta
 from itertools import pairwise
 from typing import Any
 
+from . import body as bodym
 from . import fitness as fit
 from .metrics import Calculator, RawDay, from_noon
 from .settings import Settings
@@ -229,6 +230,139 @@ class Longevity:
         else:
             action = "Meeting the Movement targets, including some vigorous minutes, is the way to raise it; repeat the test in 8 weeks."
         return {"key": "fitness", "title": "Cardio fitness", "page": None, "metrics": [m], "action": action, "walk_test": True}
+
+    # -------------------------------------------------------------- body
+
+    def _entry_metric(self, key: str, label: str, rows: list[dict[str, Any]], value_of, rating_of, *, unit: str,
+                      better: str, steady: float, target: str, rule: str, sources: list[str], decimals: int = 1,
+                      category_of=None, note: str | None = None, goal: float | None = None) -> dict[str, Any]:
+        latest = rows[-1] if rows else None
+        prev = rows[-2] if len(rows) > 1 else None
+        value = value_of(latest) if latest else None
+        monthly: dict[str, float] = {}
+        for r in rows:
+            monthly[r["date"][:7]] = round(value_of(r), decimals)
+        summary = "add one on the Body page"
+        if latest:
+            d = date.fromisoformat(latest["date"])
+            summary = f"{'measured' if key != 'bmi' else 'from your weigh-in on'} {d.day} {d.strftime('%b %Y')}"
+            if category_of:
+                summary = f"{category_of(latest)} · {summary}"
+        return {
+            "key": key,
+            "label": label,
+            "value": round(value, decimals) if value is not None else None,
+            "unit": unit,
+            "summary": summary,
+            "rating": rating_of(latest) if latest else None,
+            "target": target,
+            "goal": goal,
+            "trend": _trend(value, value_of(prev), better, steady) if latest and prev else None,
+            "trend_label": "vs the time before",
+            "better": better,
+            "monthly": [[m, monthly.get(m)] for m in self.months],
+            "rule": rule,
+            "note": note,
+            "sources": sources,
+            "stale_days": (self.today - date.fromisoformat(latest["date"])).days if latest else None,
+            "decimals": decimals,
+        }
+
+    def body(self) -> dict[str, Any]:
+        st, tz = self.settings, self.calc.tz
+        weights = [
+            {"ts": w["ts"], "date": datetime.fromtimestamp(w["ts"], tz).date().isoformat(), "value": w["value"]}
+            for w in self.store.measurements("weight")
+        ]
+        metrics = []
+        if st.height_cm:
+            metrics.append(self._entry_metric(
+                "bmi", "Body mass index", weights, lambda r: bodym.bmi(r["value"], st.height_cm),
+                lambda r: bodym.rate_bmi(bodym.bmi(r["value"], st.height_cm)), unit="", better="lower", steady=0.3,
+                target="18.5–24.9", goal=25,
+                rule=f"BMI is weight in kg divided by height in metres squared, from your weigh-ins on the Body page and your height in Settings ({st.height_cm} cm). WHO counts 25 or more as overweight and 30 or more as obesity. 18.5–24.9 is on track, 25–29.9 (or under 18.5) fair, 30 or more needs attention.",
+                note="BMI can't tell muscle from fat, so a muscular build reads high; your waist says more about fat around the middle.",
+                sources=["who_bmi"],
+            ))
+            m = metrics[0]
+            if len(weights) > 1:
+                latest = weights[-1]
+                earlier = [w for w in weights if w["ts"] <= latest["ts"] - WINDOW * 86400]
+                if earlier:
+                    m["trend"] = _trend(m["value"], bodym.bmi(earlier[-1]["value"], st.height_cm), "lower", 0.3)
+                    m["trend_label"] = "vs 3 months before"
+        else:
+            metrics.append({
+                "key": "bmi", "label": "Body mass index", "value": None, "unit": "", "summary": "add your height in Settings",
+                "rating": None, "target": "18.5–24.9", "trend": None, "monthly": [[m, None] for m in self.months],
+                "rule": "BMI needs your height, set in Settings.", "sources": ["who_bmi"],
+            })
+        first, second = (94, 102) if st.sex == "male" else (80, 88)
+        who = "men" if st.sex == "male" else "women"
+        metrics.append(self._entry_metric(
+            "waist_cm", "Waist", bodym.entries(self.store, tz, "waist_cm"), lambda r: r["value"],
+            lambda r: bodym.rate_waist(r["value"], st.sex), unit="cm", better="lower", steady=1,
+            target=f"under {first} cm" if st.sex else "set your sex in Settings", goal=first if st.sex else None,
+            rule=(f"Measured midway between your lowest rib and the top of your hip bone. Waist action levels for {who}: "
+                  f"under {first} cm on track, {first}–{second - 1} cm fair (risk increasing), {second} cm or more needs "
+                  "attention. In a study of 4,881 Dutch adults, people above the first level were up to twice as likely, and "
+                  "above the second level 2.5–4.5 times as likely, to have a major heart risk factor.") if st.sex else "Set your sex in Settings: the waist levels differ for men and women.",
+            sources=["waist_action"],
+        ))
+        metrics.append(self._entry_metric(
+            "bp", "Blood pressure", bodym.entries(self.store, tz, "bp"), lambda r: r["value"],
+            lambda r: bodym.rate_bp(r["value"], r["value2"]), unit="mmHg", better="lower", steady=3, decimals=0,
+            target="under 120/80", goal=120, category_of=lambda r: bodym.bp_category(r["value"], r["value2"]),
+            rule="The American Heart Association and American College of Cardiology categories (2025, unchanged from 2017): normal under 120/80 (on track), elevated 120–129 with the bottom number under 80 (fair), stage 1 high blood pressure 130–139 or 80–89, and stage 2 140 or 90 or more (both need attention). The line and the arrow follow the top number.",
+            note="One reading moves with the moment; an average of a few, seated and rested, taken on different days says more.",
+            sources=["bp_2025"],
+        ))
+        for m in metrics:
+            if m["key"] == "bp" and m["value"] is not None:
+                rows = bodym.entries(self.store, tz, "bp")
+                m["display"] = f"{rows[-1]['value']:.0f}/{rows[-1]['value2']:.0f}"
+        action = None
+        worst = _worst([m["rating"] for m in metrics])
+        bp, waist = metrics[2], metrics[1]
+        if bp["rating"] == LOW:
+            action = "Your last blood pressure reading is in the high range. Take a few more readings on different days, seated and rested, and show them to your doctor."
+        elif any(m["value"] is None for m in metrics):
+            missing = [m["label"].lower() for m in metrics if m["value"] is None]
+            action = f"Add {', '.join(missing)} on the Body page{' (BMI needs your height in Settings)' if 'body mass index' in missing else ''}."
+        elif any((m.get("stale_days") or 0) > 180 for m in metrics if m["key"] != "bmi"):
+            action = "Some of these are over 6 months old: measure again and add them on the Body page."
+        elif worst == GOOD:
+            action = "All in the healthy range."
+        elif waist["rating"] in (FAIR, LOW):
+            action = "Your waist is above the first action level; the Movement and Sleep targets above are the habits that work on it."
+        else:
+            action = "Re-measure in a few months to see the trend."
+        return {"key": "body", "title": "Body", "page": "body", "metrics": metrics, "action": action}
+
+    def blood(self) -> dict[str, Any]:
+        tz = self.calc.tz
+        metrics = []
+        for key in ("hba1c", "glucose_fasting", "ldl", "hdl", "triglycerides"):
+            label, unit, *_ = bodym.MEASURES[key]
+            metrics.append(self._entry_metric(
+                key, label, bodym.entries(self.store, tz, key), lambda r: r["value"],
+                lambda r, k=key: bodym.rate_lab(k, r["value"])[0], unit=unit,
+                better="higher" if key == "hdl" else "lower", steady=0.1, decimals=2 if key == "hdl" else 1,
+                target=bodym.LAB_TARGETS[key], category_of=lambda r, k=key: bodym.rate_lab(k, r["value"])[1],
+                rule=bodym.LAB_RULES[key], sources=bodym.LAB_SOURCES[key],
+            ))
+        have = [m for m in metrics if m["value"] is not None]
+        if not have:
+            action = "Add your latest blood test results on the Body page: HbA1c, fasting glucose and a cholesterol panel."
+        elif any(m["rating"] == LOW for m in have):
+            action = "At least one result is outside the healthy range: go over it with your doctor, who can set your own targets."
+        elif any((m.get("stale_days") or 0) > 365 for m in have):
+            action = "Your latest results are over a year old: ask about a repeat at your next check-up."
+        elif all(m["rating"] == GOOD for m in have) and len(have) == len(metrics):
+            action = "All in the healthy range."
+        else:
+            action = "Add any missing results on the Body page, and repeat the tests at your next check-up."
+        return {"key": "blood", "title": "Blood tests", "page": "body", "metrics": metrics, "action": action}
 
     # ---------------------------------------------------------- movement
 
@@ -493,7 +627,7 @@ class Longevity:
     # ------------------------------------------------------------ report
 
     def report(self) -> dict[str, Any]:
-        areas = [self.heart(), self.fitness(), self.movement(), self.sleep()]
+        areas = [self.heart(), self.fitness(), self.movement(), self.sleep(), self.body(), self.blood()]
         for a in areas:
             a["rating"] = _worst([m["rating"] for m in a["metrics"]])
             for m in a["metrics"]:

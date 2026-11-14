@@ -7,8 +7,8 @@ import { tile, why } from "../parts.js";
 export const usesPeriod = true;
 
 export async function load(app) {
-  const d = await app.get({ type: "health_hub/day", date: app.state.date });
-  return { w: d.weight };
+  const [d, m] = await Promise.all([app.get({ type: "health_hub/day", date: app.state.date }), app.get({ type: "health_hub/measures" })]);
+  return { w: d.weight, m };
 }
 
 export function render(app, data) {
@@ -43,7 +43,9 @@ export function render(app, data) {
       ${tile("Over 30 days", isNum(w.month_change_kg) ? `${w.month_change_kg > 0 ? "+" : w.month_change_kg < 0 ? "−" : "±"}${num(Math.abs(w.month_change_kg), 1)} kg` : "–", "")}
       ${tile("Since setting the goal", w.since_goal ? `${w.since_goal.change_kg > 0 ? "+" : w.since_goal.change_kg < 0 ? "−" : "±"}${num(Math.abs(w.since_goal.change_kg), 1)} kg` : "–", w.since_goal ? `from ${num(w.since_goal.start_kg, 1)} kg` : "Set a goal and a start date")}
       ${tile("To go", w.latest && isNum(w.goal) ? `${num(Math.max(0, w.latest.kg - w.goal), 1)} kg` : "–", isNum(w.progress) ? `${Math.round(w.progress * 100)}% of the way` : "")}
+      ${tile("BMI", w.latest && isNum(s.height_cm) ? num(w.latest.kg / (s.height_cm / 100) ** 2, 1) : "–", isNum(s.height_cm) ? `at ${s.height_cm} cm · 18.5–24.9 is the healthy range` : "Add your height in Settings")}
     </section>
+    ${measuresCard(app, data.m)}
     <article class="card"><div class="head"><h2>Weigh-ins</h2><span class="tiny muted">${shown.length} shown</span></div>
       ${shown.length ? `<div class="scroll" style="max-height:420px;overflow-y:auto"><table><thead><tr><th>Date</th><th>Weight</th><th>From</th><th></th></tr></thead><tbody>${shown
         .slice()
@@ -51,6 +53,39 @@ export function render(app, data) {
         .map((e) => `<tr><td>${h(shortDate(e.date, true))}</td><td>${num(e.kg, 1)} kg</td><td class="muted">${e.source === "manual" ? "You" : e.source === "fitbit" ? "Fitbit history" : h(e.source)}</td><td>${e.source === "manual" ? `<button class="btn" style="min-height:32px" data-action="del" data-arg="${e.ts}">Delete</button>` : ""}</td></tr>`)
         .join("")}</tbody></table></div>` : `<p class="empty">No weigh-ins in this period.</p>`}
       ${why(app, { rule: "Weigh-ins are entered here, with the Log weight action, or imported from your Fitbit history. They also go into Home Assistant's long-term statistics as health_hub:weight.", note: "Daily weight moves with water and food, so the trend over weeks says more than any one day." }, { key: "why-weight" })}
+    </article>`;
+}
+
+function measuresCard(app, m) {
+  const defs = Object.fromEntries(m.definitions.map((d) => [d.key, d]));
+  const blood = m.definitions.filter((d) => d.group === "blood");
+  const date = `<label>Date<input name="date" type="date" value="${h(app.state.date)}" max="${h(app.today)}"></label>`;
+  const fmtEntry = (e) => (e.key === "bp" ? `${num(e.value, 0)}/${num(e.value2, 0)} mmHg` : `${num(e.value, defs[e.key].decimals)} ${h(e.unit)}`);
+  return `<article class="card">
+      <div class="head"><h2>Waist, blood pressure and blood tests</h2><a href="/health/longevity" data-action="page" data-arg="longevity" class="small">See them rated on Longevity ›</a></div>
+      <div class="measure-forms">
+        <form class="settings" data-submit="measure" style="grid-template-columns:1fr">
+          <input type="hidden" name="key" value="waist_cm">
+          <label>Waist (cm)<input name="value" type="number" step="0.5" min="40" max="200" inputmode="decimal" required><span class="hint">Midway between your lowest rib and the top of your hip bone, breathing out.</span></label>
+          ${date}
+          <button class="btn" type="submit">Add waist</button>
+        </form>
+        <form class="settings" data-submit="measure" style="grid-template-columns:1fr">
+          <input type="hidden" name="key" value="bp">
+          <label>Blood pressure (mmHg)<span class="inline"><input name="value" type="number" min="70" max="260" required style="width:90px" aria-label="Top number (systolic)" placeholder="top"> / <input name="value2" type="number" min="40" max="160" required style="width:90px" aria-label="Bottom number (diastolic)" placeholder="bottom"></span><span class="hint">Seated and rested for 5 minutes.</span></label>
+          ${date}
+          <button class="btn" type="submit">Add blood pressure</button>
+        </form>
+        <form class="settings" data-submit="measure" style="grid-template-columns:1fr">
+          <label>Blood test<select name="key">${blood.map((d) => `<option value="${d.key}">${h(d.label)} (${h(d.unit)})</option>`).join("")}</select></label>
+          <label>Result<input name="value" type="number" step="0.01" min="0.2" max="30" inputmode="decimal" required><span class="hint">Copy it from your results; cholesterol and glucose in mmol/L, HbA1c in %.</span></label>
+          ${date}
+          <button class="btn" type="submit">Add result</button>
+        </form>
+      </div>
+      ${m.entries.length ? `<div class="scroll" style="max-height:360px;overflow-y:auto"><table><thead><tr><th>Date</th><th>Measure</th><th>Value</th><th></th></tr></thead><tbody>${m.entries
+        .map((e) => `<tr><td>${h(shortDate(e.date, true))}</td><td>${h(e.label)}</td><td>${fmtEntry(e)}</td><td><button class="btn" style="min-height:32px" data-action="delmeasure" data-arg="${h(e.key)}:${e.ts}">Delete</button></td></tr>`)
+        .join("")}</tbody></table></div>` : `<p class="empty">Nothing added yet.</p>`}
     </article>`;
 }
 
@@ -86,6 +121,20 @@ export const actions = {
     await app.call({ type: "health_hub/settings/set", changes });
     await app.refreshInfo();
     app.toast("Goal saved.");
+    await app.render(true);
+  },
+  measure: async (app, data) => {
+    const msg = { type: "health_hub/measure/log", key: data.key, value: Number(data.value), date: data.date || app.today };
+    if (data.value2 !== undefined) msg.value2 = Number(data.value2);
+    if (!isNum(msg.value)) throw new Error("Enter a number");
+    await app.call(msg);
+    app.toast("Added.");
+    await app.render(true);
+  },
+  delmeasure: async (app, arg) => {
+    const [key, ts] = arg.split(":");
+    await app.call({ type: "health_hub/measure/delete", key, ts: Number(ts) });
+    app.toast("Deleted.");
     await app.render(true);
   },
   del: async (app, arg) => {

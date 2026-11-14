@@ -103,6 +103,17 @@ async def test_commands(hub_entry, hass: HomeAssistant, hass_client, hass_ws_cli
     assert about["result"]["sex"] == "male" and about["result"]["height_cm"] == 183
     bad_sex = await _ws(ws, 18, type="health_hub/settings/set", changes={"sex": "x"})
     assert not bad_sex["success"]
+    bp = await _ws(ws, 19, type="health_hub/measure/log", key="bp", value=121, value2=79)
+    assert bp["success"], bp
+    entry = bp["result"]["entries"][0]
+    assert entry["key"] == "bp" and entry["value2"] == 79
+    bad_lab = await _ws(ws, 20, type="health_hub/measure/log", key="ldl", value=130)
+    assert not bad_lab["success"]
+    gone = await _ws(ws, 21, type="health_hub/measure/delete", key="bp", ts=entry["ts"])
+    assert gone["success"] and gone["result"]["entries"] == []
+    walk = await _ws(ws, 22, type="health_hub/walk_test/log", date=today, finish="00:00", minutes=14, seconds=5, hr=140)
+    assert walk["success"], walk
+    assert walk["result"]["walk_tests"][0]["seconds"] == 845
 
 
 async def test_non_admin_refused(hub_entry, hass: HomeAssistant, hass_ws_client, hass_read_only_access_token):

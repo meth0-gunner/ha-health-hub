@@ -6,14 +6,14 @@ import { dur, h, isNum, monthName, num, shortDate } from "../util.js";
 import { sourceLinks, why } from "../parts.js";
 
 export const usesPeriod = false;
-export const title = () => "Your last 3 months against the long-term guidance";
+export const title = () => "Your habits and measurements against the long-term guidance";
 
 const RATING = {
   good: ["On track", "lv-good"],
   fair: ["Fair", "lv-fair"],
   low: ["Needs attention", "lv-low"],
 };
-const PAGE_NAMES = { heart: "Heart", activity: "Activity & load", sleep: "Sleep" };
+const PAGE_NAMES = { heart: "Heart", activity: "Activity & load", sleep: "Sleep", body: "Body" };
 
 export async function load(app) {
   return app.get({ type: "health_hub/longevity" });
@@ -27,7 +27,9 @@ function pill(rating) {
 
 function fmt(m, v) {
   if (!isNum(v)) return "–";
+  if (m.display && v === m.value) return m.display;
   if (m.format === "duration") return dur(v);
+  if (isNum(m.decimals)) return num(v, Number.isInteger(v) ? 0 : m.decimals);
   return num(v, Number.isInteger(v) ? 0 : 1);
 }
 
@@ -80,6 +82,9 @@ function spark(m) {
     </div>`;
 }
 
+// Lower-case the first word unless it's an abbreviation (HbA1c, LDL).
+const lower = (s) => (/^[A-Z][a-z]/.test(s) ? s[0].toLowerCase() + s.slice(1) : s);
+
 function metric(app, m) {
   const unit = m.format === "duration" ? "" : m.unit;
   return `<div class="lv-metric">
@@ -95,7 +100,7 @@ function metric(app, m) {
       </div>
       ${spark(m)}
     </div>
-    ${why(app, { rule: m.rule, note: m.note, sources: m.why_sources || [] }, { key: `why-lv-${m.key}`, label: `How ${m.label.replace(/\s*\(.*\)/, "").toLowerCase()} is rated` })}`;
+    ${why(app, { rule: m.rule, note: m.note, sources: m.why_sources || [] }, { key: `why-lv-${m.key}`, label: `How ${lower(m.label.replace(/\s*\(.*\)/, ""))} is rated` })}`;
 }
 
 const mmss = (sec) => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
@@ -168,7 +173,7 @@ export function render(app, data) {
   ].filter(Boolean);
   return `<div class="lv-areas"><section class="card lv-intro">
       <div class="head"><h2>How your habits compare with the long-term guidance</h2><span class="small">${parts.join(" · ")}</span></div>
-      <p class="small soft">Up to ${h(shortDate(data.as_of, true))}. Each figure covers the last 3 months and is rated against published guidance or large studies of how habits relate to long-term health; the line shows the last 12 months. These describe habits across populations, not a diagnosis. The day-to-day detail stays on each area's own page.</p>
+      <p class="small soft">Up to ${h(shortDate(data.as_of, true))}. Habits (heart, movement, sleep) cover the last 3 months; measurements (fitness, body, blood tests) show your latest entry. Each is rated against published guidance or large studies of how they relate to long-term health, and the line shows the last 12 months. These describe habits across populations, not a diagnosis. The day-to-day detail stays on each area's own page.</p>
     </section>
     ${data.areas.map((a) => area(app, a, data)).join("")}</div>`;
 }

@@ -104,6 +104,10 @@ into the integration with hand-drawn charts and no add-on cards:
   Body page), compared with treadmill tests of healthy adults your age, with a
   fitness age. A rough figure from resting and maximum heart rate is shown
   alongside for comparison only.
+- **Body** and **Blood tests** on Longevity rate BMI (from your weigh-ins and
+  height), waist, blood pressure, HbA1c, fasting glucose, LDL, HDL and
+  triglycerides against WHO, AHA/ACC, ADA and NCEP ranges. All of these are
+  entered on the Body page, next to the weigh-ins.
 - Day, Week, Month, Year or a custom range, and ‹ › to step through them.
 
 Every score and statement is worked out from your own data with a stated rule;

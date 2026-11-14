@@ -142,7 +142,7 @@ def test_strength_days_from_training_log(store):
 def test_no_data_is_not_rated(store):
     r = _report(store, lambda d: RawDay(day=d))
     assert r["rated"] == 0 and all(a["rating"] is None for a in r["areas"])
-    assert r["total"] == 7
+    assert r["total"] == 15
 
 
 def test_settings_sex_and_height(store):
@@ -237,3 +237,62 @@ def test_no_walk_test_shows_rough_range(store):
     m = _metric(r, "cardio_fitness")
     assert m["value"] is None and m["detail"]["rough_range"] == [36.0, 45.9]
     assert "walk test" in next(a for a in r["areas"] if a["key"] == "fitness")["action"]
+
+
+# ---------------------------------------------------------------- body
+
+from custom_components.health_hub.core import body  # noqa: E402
+
+
+def test_body_ratings():
+    assert body.rate_bmi(22) == "good" and body.rate_bmi(27) == "fair" and body.rate_bmi(31) == "low" and body.rate_bmi(18) == "fair"
+    assert body.rate_waist(93, "male") == "good" and body.rate_waist(95, "male") == "fair" and body.rate_waist(102, "male") == "low"
+    assert body.rate_waist(85, "female") == "fair" and body.rate_waist(85, None) is None
+    assert body.bp_category(118, 76) == "Normal"
+    assert body.bp_category(125, 78) == "Elevated"
+    assert body.bp_category(125, 82) == "Stage 1 high blood pressure"
+    assert body.bp_category(141, 70) == "Stage 2 high blood pressure"
+    assert body.rate_lab("hba1c", 5.6) == ("good", "Normal")
+    assert body.rate_lab("hba1c", 6.0)[0] == "fair" and body.rate_lab("hba1c", 6.5)[0] == "low"
+    assert body.rate_lab("ldl", 3.0) == ("fair", "Near optimal") and body.rate_lab("ldl", 4.2)[0] == "low"
+    assert body.rate_lab("hdl", 0.9)[0] == "low" and body.rate_lab("hdl", 1.7)[1].startswith("High")
+    assert body.rate_lab("triglycerides", 1.8) == ("fair", "Borderline high")
+
+
+def test_body_entries_and_validation(store):
+    body.log(store, "bp", 1000, 128, 79)
+    body.log(store, "waist_cm", 2000, 91.25)
+    body.log(store, "hdl", 3000, 1.234)
+    with pytest.raises(body.BodyError):
+        body.log(store, "bp", 4000, 80, 90)  # bottom above top
+    with pytest.raises(body.BodyError):
+        body.log(store, "bp", 4000, 120)
+    with pytest.raises(body.BodyError):
+        body.log(store, "ldl", 4000, 40)  # mg/dL by mistake
+    with pytest.raises(body.BodyError):
+        body.log(store, "nope", 4000, 1)
+    rows = body.all_entries(store, TZ)
+    assert [r["key"] for r in rows] == ["hdl", "waist_cm", "bp"]
+    assert rows[2]["value"] == 128 and rows[2]["value2"] == 79 and rows[0]["value"] == 1.23
+    assert body.delete(store, "bp", 1000) and body.entries(store, TZ, "bp") == []
+
+
+def test_longevity_body_and_blood(store):
+    day = TODAY - timedelta(days=10)
+    ts = int(datetime.combine(day, time(8), TZ).timestamp())
+    store.add_measurement(ts - 200 * 86400, "weight", 90.0)
+    store.add_measurement(ts, "weight", 85.0)
+    body.log(store, "waist_cm", ts, 96)
+    body.log(store, "bp", ts, 124, 76)
+    body.log(store, "ldl", ts, 2.4)
+    r = _report(store, lambda d: RawDay(day=d), sex="male", height_cm=183)
+    bmi = _metric(r, "bmi")
+    assert bmi["value"] == round(85 / 1.83**2, 1) and bmi["rating"] == "fair"
+    assert bmi["trend"]["direction"] == "better"
+    assert _metric(r, "waist_cm")["rating"] == "fair"
+    bp = _metric(r, "bp")
+    assert bp["display"] == "124/76" and bp["rating"] == "fair" and bp["summary"].startswith("124/76, elevated")
+    assert _metric(r, "ldl")["rating"] == "good" and _metric(r, "hba1c")["value"] is None
+    blood = next(a for a in r["areas"] if a["key"] == "blood")
+    assert blood["rating"] == "good" and "missing" in blood["action"]
+    assert r["total"] == 15
