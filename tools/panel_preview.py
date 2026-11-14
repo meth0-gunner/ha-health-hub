@@ -49,12 +49,13 @@ el.hass = {callWS: call, callService: (d, s, data) => call({type: "service", dom
 
 
 class App:
-    def __init__(self, db: str, tz: str, today: str | None, review: str | None) -> None:
+    def __init__(self, db: str, tz: str, today: str | None, review: str | None, lon_review: str | None = None) -> None:
         self.store = Store(db)
         self.tz = ZoneInfo(tz)
         self.calc = Calculator(self.store, self.tz)
         self.fixed_today = date.fromisoformat(today) if today else None
         self.review = json.loads(Path(review).read_text()) if review else None
+        self.lon_review = json.loads(Path(lon_review).read_text()) if lon_review else None
         self.sync_requested: float | None = None  # pretend the phone answers 5 seconds later
 
     def today(self) -> date:
@@ -123,6 +124,10 @@ class App:
         if t == "health_hub/weight/delete":
             self.store.delete_measurement(int(msg["ts"]), "weight", "manual")
             return views.weight_view(self.store, s, self.tz)
+        if t == "health_hub/review" and msg.get("kind") == "longevity":
+            return self.lon_review or {"enabled": True, "kind": "longevity", "reviewer": {"state": "ready"}, "latest": None, "last_attempt": None}
+        if t == "health_hub/review/longevity/request":
+            return {"id": "lon-preview"}
         if t == "health_hub/review":
             return self.review or {"enabled": True, "reviewer": {"state": "not_installed"}, "latest": None, "last_attempt": None}
         if t == "health_hub/sync/request":
@@ -140,8 +145,9 @@ def main() -> None:
     p.add_argument("--port", type=int, default=8765)
     p.add_argument("--today", help="pretend today is this date (YYYY-MM-DD)")
     p.add_argument("--review", help="JSON file answering health_hub/review")
+    p.add_argument("--lon-review", help="JSON file answering health_hub/review with kind longevity")
     args = p.parse_args()
-    app = App(args.db, args.tz, args.today, args.review)
+    app = App(args.db, args.tz, args.today, args.review, args.lon_review)
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *a):  # quiet

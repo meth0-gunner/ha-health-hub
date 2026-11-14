@@ -189,10 +189,28 @@ async def test_review_round_trip(hub_entry, hass: HomeAssistant, hass_ws_client)
     assert state.state == GOOD_ANSWER["headline"]
     assert state.attributes["attention"] == "neutral"
     assert hass.states.get("sensor.health_hub_reviewer").state == "ready"
-    assert not (_review_dir(hass) / "request.json").exists()
+    # With no monthly Longevity review yet, one is asked for straight after the daily one.
+    lon = json.loads((_review_dir(hass) / "request.json").read_text())
+    assert lon["id"].startswith("lon-") and lon["reason"] == "longevity monthly"
+    assert "monthly long-term health review" in lon["prompt"] and '"areas"' in lon["prompt"]
+    reviews = hub_entry.runtime_data.reviews
+    assert not reviews.longevity_due()
 
     ws = await hass_ws_client(hass)
-    await ws.send_json({"id": 1, "type": "health_hub/review", "history": True})
+    # While it's pending, a manual daily review is refused rather than overwriting it.
+    await ws.send_json({"id": 5, "type": "health_hub/review/longevity/request"})
+    busy = await ws.receive_json()
+    assert not busy["success"] and busy["error"]["code"] == "busy"
+
+    _answer(hass, lon["id"], review={**GOOD_ANSWER, "headline": "Monthly headline"})
+    await _poll(hass)
+    assert not (_review_dir(hass) / "request.json").exists()
+    await ws.send_json({"id": 6, "type": "health_hub/review", "kind": "longevity"})
+    monthly = await ws.receive_json()
+    assert monthly["result"]["latest"]["review"]["headline"] == "Monthly headline"
+    assert hass.states.get("sensor.health_hub_daily_review").state == GOOD_ANSWER["headline"]
+
+    await ws.send_json({"id": 10, "type": "health_hub/review", "history": True})
     msg = await ws.receive_json()
     assert msg["success"], msg
     latest = msg["result"]["latest"]
@@ -236,3 +254,31 @@ async def test_review_can_be_turned_off(hub_entry, hass: HomeAssistant):
     hass.config_entries.async_update_entry(hub_entry, options={"review_enabled": False})
     await hass.async_block_till_done()
     assert hass.states.get("sensor.health_hub_reviewer").state == "disabled"
+
+
+def test_longevity_summary_is_compact(store):
+    from datetime import date
+
+    from custom_components.health_hub.core import settings as settings_mod
+    from custom_components.health_hub.core.longevity import longevity_view
+    from custom_components.health_hub.core.metrics import Calculator
+    from custom_components.health_hub.core.review import build_longevity_prompt, longevity_summary
+
+    settings = settings_mod.update(store, {"age": 38, "sex": "male", "height_cm": 183})
+    calc = Calculator(store, SYDNEY)
+    today = date(2026, 10, 27)
+    summary = longevity_summary(longevity_view(calc, store, settings, today), settings, today)
+    assert summary["owner"] == {"age": 38, "sex": "male", "height_cm": 183}
+    assert [a["area"] for a in summary["areas"]] == ["Heart", "Cardio fitness", "Movement", "Sleep", "Body", "Blood tests"]
+    text = json.dumps(summary)
+    assert '"rule"' not in text and "sources" not in text
+    assert "Reply with a single JSON object" in build_longevity_prompt(summary)
+
+
+def test_daily_and_longevity_reviews_kept_apart(store):
+    store.add_review_request("2026-10-27-1", "2026-10-27", 100, "manual", "{}")
+    store.add_review_request("lon-2026-10-27-2", "2026-10-27", 200, "longevity manual", "{}")
+    assert store.latest_review()["id"] == "2026-10-27-1"
+    assert store.latest_review(None, None, "longevity")["id"] == "lon-2026-10-27-2"
+    assert store.latest_review(None, None, None)["id"] == "lon-2026-10-27-2"
+    assert [r["id"] for r in store.review_history()] == ["2026-10-27-1"]

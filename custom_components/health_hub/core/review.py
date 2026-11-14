@@ -568,3 +568,109 @@ def parse_review(answer: Any) -> dict[str, Any]:
 
 def attention_label(review: dict[str, Any]) -> str:
     return LEVELS[review.get("attention", 1)]
+
+
+# ----------------------------------------------------------- longevity review
+
+LONGEVITY_PREFIX = "lon-"
+LONGEVITY_EVERY_DAYS = 28  # a new monthly review once the last good one is this old
+
+LONGEVITY_SHAPE = {
+    "headline": "The single most important thing for long-term health this month, at most 90 characters.",
+    "summary": "Two or three sentences: where the owner stands, what moved over the last months, and the priority.",
+    "observations": [
+        {
+            "topic": "one of: " + ", ".join(TOPICS),
+            "title": "The insight in a few words (for example 'Fitness is the biggest lever').",
+            "detail": "The trend or gap and why it matters for long-term health, in one to three sentences. Quote only the numbers that prove it.",
+            "action": "What to do this month: one concrete sentence.",
+            "level": "one of: " + ", ".join(LEVELS),
+            "based_on": "What it rests on: which figures, over what period, compared with what.",
+            "sources": [{"title": "Page title", "publisher": "Organisation or journal", "year": 2024, "url": "https://..."}],
+        }
+    ],
+    "suggestions": [
+        {"text": "A specific goal or habit for the coming month, tied to an observation.", "why": "One sentence.", "sources": ["same shape as above"]}
+    ],
+    "caveats": ["Only a caveat that changes how to read this review. Usually none."],
+}
+
+LONGEVITY_PROMPT = """You are writing the monthly long-term health review for a personal \
+health dashboard in Home Assistant. One adult reads it: the person the data is about. \
+Their age, sex and height are in the summary; nothing else is known about them \
+(medical history, medication, family history), so say so when a judgement depends on those.
+
+## About the data
+The summary at the end is Health Hub's Longevity report card:
+- Habit areas (heart, movement, sleep) cover the last 3 months, compared with the 3 \
+months before, with a 12-month series by month. Measurement areas (cardio fitness, \
+body, blood tests) show the latest entry and the one before.
+- Each figure has Health Hub's rating against published guidance ("good" on track, \
+"fair", "low" needs attention, null not rated) and the guidance it was rated against.
+- Readings come from a Xiaomi Smart Band 8 Pro (estimates, not clinical measurements) \
+and an earlier Fitbit; fitness comes from a 1-mile walk test; body measures and blood \
+tests are typed in by the owner. "monthly" values are null where there was no data.
+
+## What the owner wants
+Not a recital of the report card: they already see it. Tell them what matters most \
+for their long-term health and what to do about it this month:
+- Which one or two levers would do the most good, given where they stand.
+- What has moved over the months, for better or worse, and how fast.
+- How the areas connect (for example movement, fitness and resting heart rate).
+- Anything that should go to a doctor, plainly.
+Two to four observations at most, the most important first; at most three goals \
+for the month in "suggestions". If everything is on track, say so briefly and say \
+what keeps it there.
+
+## How to write it
+1. Check each health claim against current, reputable evidence using web search, \
+opening the pages where you can: clinical guidelines, major health bodies and \
+peer-reviewed research, preferably from the last ten years. Cite the sources you \
+relied on, with links taken from the pages or search results you saw; never write \
+a link from memory. If you could not verify a claim, leave it out.
+2. Do not diagnose. For blood tests or blood pressure outside the healthy range, use \
+level "see_doctor", say why, and suggest taking the results to a doctor.
+3. Use only numbers from the summary; never invent or estimate figures.
+4. Say how sure a trend is: how many months or measurements it rests on.
+
+## Answer
+Reply with a single JSON object and nothing else, in this shape:
+{shape}
+
+## Summary
+```json
+{summary}
+```
+"""
+
+
+def longevity_summary(report: dict[str, Any], settings: Any, today: date) -> dict[str, Any]:
+    """The Longevity report card cut down to what the review needs (no rule text)."""
+    keep = ("label", "value", "display", "unit", "summary", "rating", "target", "trend", "monthly", "detail")
+    areas = []
+    for a in report["areas"]:
+        metrics = []
+        for m in a["metrics"]:
+            metrics.append({k: m.get(k) for k in keep if m.get(k) is not None})
+        areas.append({"area": a["title"], "rating": a.get("rating"), "suggested_action": a.get("action"), "metrics": metrics})
+    tests = [
+        {"date": t["date"], "minutes": round(t["seconds"] / 60, 2), "finish_hr": t["hr"], "vo2max": t["vo2max"], "fitness_age": (t.get("fitness_age") or {}).get("age")}
+        for t in report.get("walk_tests", [])[:6]
+    ]
+    return {
+        "date": today.isoformat(),
+        "as_of": report["as_of"],
+        "owner": {"age": settings.age, "sex": settings.sex, "height_cm": settings.height_cm},
+        "goals": {"steps_a_day": settings.steps_goal, "sleep_minutes": settings.sleep_goal_min,
+                  "in_bed_by": settings.bed_target, "gym_per_week": settings.gym_per_week},
+        "counts": report["counts"],
+        "areas": areas,
+        "walk_tests": tests,
+    }
+
+
+def build_longevity_prompt(summary: dict[str, Any]) -> str:
+    return LONGEVITY_PROMPT.format(
+        shape=json.dumps(LONGEVITY_SHAPE, indent=2),
+        summary=json.dumps(summary, indent=2),
+    )

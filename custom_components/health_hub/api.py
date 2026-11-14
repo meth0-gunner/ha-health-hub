@@ -5,7 +5,8 @@
 
 Both need an admin user's access token. Websocket commands (admin only):
 `health_hub/samples` returns minute-level readings for charts, and
-`health_hub/review` the daily review (latest, a given one, or the history).
+`health_hub/review` the daily or monthly Longevity review (latest, a given one, or the
+history), and `health_hub/review/longevity/request` asks for the Longevity one now.
 """
 
 from __future__ import annotations
@@ -133,9 +134,34 @@ async def ws_samples(
     connection.send_result(msg["id"], {"points": [[ts * 1000, v] for ts, v in points]})
 
 
+@websocket_api.websocket_command({vol.Required("type"): "health_hub/review/longevity/request"})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_review_longevity(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Ask Claude for the monthly Longevity review now."""
+    from .core.review import ReviewError
+
+    hub = _hub(hass)
+    if hub is None:
+        connection.send_error(msg["id"], "not_loaded", "Health Hub is not loaded")
+        return
+    if not hub.reviews.enabled:
+        connection.send_error(msg["id"], "disabled", "The review is turned off in Health Hub's options")
+        return
+    try:
+        review_id = await hub.reviews.async_request_longevity("manual")
+    except ReviewError as err:
+        connection.send_error(msg["id"], "busy", str(err))
+        return
+    connection.send_result(msg["id"], {"id": review_id})
+
+
 @websocket_api.websocket_command(
     {
         vol.Required("type"): "health_hub/review",
+        vol.Optional("kind", default="daily"): vol.In(["daily", "longevity"]),
         vol.Optional("review_id"): str,
         vol.Optional("history", default=False): bool,
     }
@@ -151,7 +177,7 @@ async def ws_review(
         connection.send_error(msg["id"], "not_loaded", "Health Hub is not loaded")
         return
     reviews = hub.reviews
-    result = reviews.overview()
+    result = reviews.overview(msg["kind"])
     if "review_id" in msg:
         row = await hass.async_add_executor_job(hub.store.get_review, msg["review_id"])
         if row is None:
@@ -181,3 +207,4 @@ def async_register_api(hass: HomeAssistant) -> None:
     hass.http.register_view(SyncDoneView())
     websocket_api.async_register_command(hass, ws_samples)
     websocket_api.async_register_command(hass, ws_review)
+    websocket_api.async_register_command(hass, ws_review_longevity)

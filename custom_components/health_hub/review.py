@@ -38,11 +38,15 @@ from .const import (
     SIGNAL_REVIEW,
 )
 from .core.review import (
+    LONGEVITY_EVERY_DAYS,
+    LONGEVITY_PREFIX,
     ReviewError,
+    build_longevity_prompt,
     build_prompt,
     build_summary,
     main_sleep,
     parse_review,
+    longevity_summary,
     recent_context,
     sleeps_by_day,
 )
@@ -80,6 +84,8 @@ class ReviewManager:
         self.dir = Path(hass.config.path(REVIEW_DIR))
         self.latest: dict[str, Any] | None = None  # newest successful review row
         self.last_attempt: dict[str, Any] | None = None  # newest request row, any outcome
+        self.lon_latest: dict[str, Any] | None = None  # the monthly Longevity review, likewise
+        self.lon_attempt: dict[str, Any] | None = None
         self.reviewer: dict[str, Any] = {}
         self.reviewer_state = "unknown"
         self._response_mtime: float | None = None
@@ -122,6 +128,8 @@ class ReviewManager:
         store = self.hub.store
         self.latest = await self.hass.async_add_executor_job(store.latest_review, "ok")
         self.last_attempt = await self.hass.async_add_executor_job(store.latest_review)
+        self.lon_latest = await self.hass.async_add_executor_job(store.latest_review, "ok", None, "longevity")
+        self.lon_attempt = await self.hass.async_add_executor_job(store.latest_review, None, None, "longevity")
 
     # --------------------------------------------------------------- triggers
 
@@ -177,8 +185,17 @@ class ReviewManager:
             _LOGGER.exception("Could not add the day-by-day figures to the review")
             return None
 
+    @staticmethod
+    def _pending(row: dict[str, Any] | None) -> bool:
+        return bool(row and row["status"] == "pending" and time.time() - row["requested"] < GIVE_UP_AFTER)
+
     async def async_request(self, reason: str = "manual") -> str:
         """Write a review request for the add-on and remember it."""
+        if self._pending(self.lon_attempt):
+            # The add-on takes one request at a time; don't overwrite the monthly one.
+            if reason == "manual":
+                raise ReviewError("Claude is still writing the monthly Longevity review; try again in a few minutes")
+            return ""
         tz = dt_util.get_default_time_zone()
         now = int(time.time())
         extra = await self.hass.async_add_executor_job(self._context)
@@ -200,6 +217,47 @@ class ReviewManager:
         await self.hass.async_add_executor_job(_write_json, self.dir / "request.json", request)
         self.last_attempt = await self.hass.async_add_executor_job(store.get_review, review_id)
         _LOGGER.info("Requested the daily review (%s)", reason)
+        self._changed()
+        return review_id
+
+    def _longevity_summary(self) -> dict[str, Any]:
+        from .core import settings as settings_mod
+        from .core.longevity import longevity_view
+
+        settings = settings_mod.load(self.hub.store)
+        today = dt_util.now().date()
+        report = longevity_view(self.hub.calc, self.hub.store, settings, today)
+        return longevity_summary(report, settings, today)
+
+    def longevity_due(self) -> bool:
+        if not self.enabled or self._pending(self.lon_attempt) or self._pending(self.last_attempt):
+            return False
+        if self.lon_attempt and self.lon_attempt["status"] != "ok" and time.time() - self.lon_attempt["requested"] < 86400:
+            return False  # one try a day after a failure
+        last = self.lon_latest["requested"] if self.lon_latest else 0
+        return time.time() - last >= LONGEVITY_EVERY_DAYS * 86400
+
+    async def async_request_longevity(self, reason: str = "manual") -> str:
+        """Ask for the monthly Longevity review (same add-on, same files)."""
+        if self._pending(self.last_attempt) or self._pending(self.lon_attempt):
+            raise ReviewError("Claude is still writing another review; try again in a few minutes")
+        now = int(time.time())
+        summary = await self.hass.async_add_executor_job(self._longevity_summary)
+        review_id = f"{LONGEVITY_PREFIX}{summary['date']}-{now}"
+        request = {
+            "id": review_id,
+            "created": dt_util.utcnow().isoformat(timespec="seconds"),
+            "day": summary["date"],
+            "reason": f"longevity {reason}",
+            "prompt": build_longevity_prompt(summary),
+        }
+        store = self.hub.store
+        await self.hass.async_add_executor_job(
+            store.add_review_request, review_id, summary["date"], now, f"longevity {reason}", json.dumps(summary)
+        )
+        await self.hass.async_add_executor_job(_write_json, self.dir / "request.json", request)
+        self.lon_attempt = await self.hass.async_add_executor_job(store.get_review, review_id)
+        _LOGGER.info("Requested the monthly Longevity review (%s)", reason)
         self._changed()
         return review_id
 
@@ -279,11 +337,18 @@ class ReviewManager:
             json.dumps(meta),
         )
         await self.hass.async_add_executor_job(self._clear_request, response["id"])
+        what = "Longevity review" if response["id"].startswith(LONGEVITY_PREFIX) else "Daily review"
         if status == "ok":
-            _LOGGER.info("Daily review %s received", response["id"])
+            _LOGGER.info("%s %s received", what, response["id"])
         else:
-            _LOGGER.warning("Daily review %s failed: %s", response["id"], error)
+            _LOGGER.warning("%s %s failed: %s", what, response["id"], error)
         await self._async_load()
+        if what == "Daily review" and self.longevity_due():
+            # The monthly review follows a finished daily one, so the two never collide.
+            try:
+                await self.async_request_longevity("monthly")
+            except ReviewError:
+                pass
         return True
 
     def _clear_request(self, review_id: str) -> None:
@@ -294,16 +359,19 @@ class ReviewManager:
             path.unlink(missing_ok=True)
 
     async def _async_check_overdue(self) -> bool:
-        a = self.last_attempt
-        if not a or a["status"] != "pending" or time.time() - a["requested"] < GIVE_UP_AFTER:
-            return False
-        await self.hass.async_add_executor_job(
-            self.hub.store.complete_review,
-            a["id"], int(time.time()), "error", None,
-            "No answer from the Health Hub Reviewer add-on. Is it installed and running?", None,
-        )
-        await self._async_load()
-        return True
+        changed = False
+        for a in (self.last_attempt, self.lon_attempt):
+            if not a or a["status"] != "pending" or time.time() - a["requested"] < GIVE_UP_AFTER:
+                continue
+            await self.hass.async_add_executor_job(
+                self.hub.store.complete_review,
+                a["id"], int(time.time()), "error", None,
+                "No answer from the Health Hub Reviewer add-on. Is it installed and running?", None,
+            )
+            changed = True
+        if changed:
+            await self._async_load()
+        return changed
 
     @callback
     def _changed(self) -> None:
@@ -329,10 +397,12 @@ class ReviewManager:
             "meta": json.loads(row["meta_json"]) if row.get("meta_json") else None,
         }
 
-    def overview(self) -> dict[str, Any]:
+    def overview(self, kind: str = "daily") -> dict[str, Any]:
+        lon = kind == "longevity"
         return {
             "enabled": self.enabled,
+            "kind": kind,
             "reviewer": {"state": self.reviewer_state, **self.reviewer},
-            "latest": self.as_dict(self.latest),
-            "last_attempt": self.as_dict(self.last_attempt),
+            "latest": self.as_dict(self.lon_latest if lon else self.latest),
+            "last_attempt": self.as_dict(self.lon_attempt if lon else self.last_attempt),
         }

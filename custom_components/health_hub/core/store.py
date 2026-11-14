@@ -656,8 +656,15 @@ class Store:
             row = self._db.execute("SELECT * FROM reviews WHERE id = ?", (review_id,)).fetchone()
         return dict(row) if row else None
 
-    def latest_review(self, status: str | None = None, day: str | None = None) -> dict[str, Any] | None:
+    def latest_review(
+        self, status: str | None = None, day: str | None = None, kind: str | None = "daily"
+    ) -> dict[str, Any] | None:
+        """Newest review row. kind: "daily", "longevity" (ids starting lon-) or None for any."""
         sql, args = "SELECT * FROM reviews WHERE 1 = 1", []
+        if kind == "daily":
+            sql += " AND id NOT LIKE 'lon-%'"
+        elif kind == "longevity":
+            sql += " AND id LIKE 'lon-%'"
         if status:
             sql += " AND status = ?"
             args.append(status)
@@ -672,7 +679,7 @@ class Store:
         with self._lock:
             rows = self._db.execute(
                 "SELECT id, day, requested, reason, finished, status, error, review_json"
-                " FROM reviews ORDER BY requested DESC LIMIT ?",
+                " FROM reviews WHERE id NOT LIKE 'lon-%' ORDER BY requested DESC LIMIT ?",
                 (limit,),
             ).fetchall()
         return [dict(r) for r in rows]

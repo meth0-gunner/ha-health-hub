@@ -3,7 +3,7 @@
 
 import { C, dotLayer, dots, hline, hoverable, line, scale, stroke, wide } from "../charts.js";
 import { dur, h, isNum, monthName, num, shortDate } from "../util.js";
-import { sourceLinks, why } from "../parts.js";
+import { loadReview, reviewActions, reviewCard, sourceLinks, why } from "../parts.js";
 
 export const usesPeriod = false;
 export const title = () => "Your habits and measurements against the long-term guidance";
@@ -16,7 +16,9 @@ const RATING = {
 const PAGE_NAMES = { heart: "Heart", activity: "Activity & load", sleep: "Sleep", body: "Body" };
 
 export async function load(app) {
-  return app.get({ type: "health_hub/longevity" });
+  const [report, review] = await Promise.all([app.get({ type: "health_hub/longevity" }), loadReview(app, "longevity")]);
+  report.review = review;
+  return report;
 }
 
 function pill(rating) {
@@ -175,10 +177,12 @@ export function render(app, data) {
       <div class="head"><h2>How your habits compare with the long-term guidance</h2><span class="small">${parts.join(" · ")}</span></div>
       <p class="small soft">Up to ${h(shortDate(data.as_of, true))}. Habits (heart, movement, sleep) cover the last 3 months; measurements (fitness, body, blood tests) show your latest entry. Each is rated against published guidance or large studies of how they relate to long-term health, and the line shows the last 12 months. These describe habits across populations, not a diagnosis. The day-to-day detail stays on each area's own page.</p>
     </section>
+    ${data.review ? reviewCard(app, data.review, { kind: "longevity" }) : ""}
     ${data.areas.map((a) => area(app, a, data)).join("")}</div>`;
 }
 
 export const actions = {
+  ...reviewActions,
   walk: async (app, data) => {
     const msg = { type: "health_hub/walk_test/log", date: data.date, finish: data.finish, minutes: Number(data.minutes), seconds: Number(data.seconds || 0) };
     if (data.hr !== "") msg.hr = Number(data.hr);

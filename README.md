@@ -155,6 +155,12 @@ Assistant tools. Every request and answer is kept, with the summary that was sen
   no night has synced (10:00 by default).
 - Websocket command `health_hub/review`.
 
+Once a month, straight after a morning's daily review, Claude also writes a
+**monthly Longevity review** from the Longevity report card (12-month trends,
+fitness, body measures and blood tests), shown at the top of the Longevity tab,
+which also has a button to ask for one now. It goes through the same add-on and
+is kept with the summary that was sent.
+
 If no review appears, look at the Reviewer sensor and the add-on's log.
 
 ## Privacy

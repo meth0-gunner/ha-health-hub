@@ -86,7 +86,9 @@ function reviewerLine(r) {
   return `<p class="tiny faint">Reviewer add-on: ${h(r.state.replace("_", " "))}${isNum(ago) ? ` · last heard from ${ago < 2 ? "just now" : `${ago} min ago`}` : ""}${r.claude_code_version ? ` · Claude Code ${h(r.claude_code_version)}` : ""}</p>`;
 }
 
-export function reviewCard(app, data, { topics = null, compact = false } = {}) {
+export function reviewCard(app, data, { topics = null, compact = false, kind = "daily" } = {}) {
+  const lon = kind === "longevity";
+  const title = lon ? "Monthly review" : "Daily review";
   const latest = data && data.latest;
   const reviewer = (data && data.reviewer) || {};
   const attempt = data && data.last_attempt;
@@ -97,15 +99,15 @@ export function reviewCard(app, data, { topics = null, compact = false } = {}) {
     not_installed: "The Health Hub Reviewer add-on isn't installed, so no review can be written. Install it from Settings → Add-ons → Add-on store (Health Hub add-ons repository).",
     offline: "The Health Hub Reviewer add-on isn't running. Start it in Settings → Add-ons → Health Hub Reviewer.",
     no_login: "The Reviewer add-on can't find a Claude login. Sign in once in the Claude Code add-on's terminal (claude, then /login).",
-    disabled: "The daily review is turned off in Health Hub's options.",
+    disabled: "The review is turned off in Health Hub's options.",
   }[reviewer.state] || "";
   const detail = reviewer.detail && reviewer.state === "error" ? ` (${reviewer.detail})` : "";
-  const waiting = reviewer.state === "running" ? "Claude is writing today's review… (usually 1 to 3 minutes)" : "Waiting for the Reviewer add-on to pick up the request…";
-  const button = enabled ? `<button class="btn" data-action="review" ${pending && !blocked ? "disabled" : ""}>${pending && !blocked ? "Writing…" : "Review again"}</button>` : "";
+  const waiting = reviewer.state === "running" ? `Claude is writing ${lon ? "the monthly" : "today's"} review… (usually 1 to 3 minutes)` : "Waiting for the Reviewer add-on to pick up the request…";
+  const button = enabled ? `<button class="btn" data-action="${lon ? "lonreview" : "review"}" ${pending && !blocked ? "disabled" : ""}>${pending && !blocked ? "Writing…" : lon && !latest ? "Write it now" : "Review again"}</button>` : "";
   const status = blocked || (pending ? waiting : attempt && attempt.status === "error" ? `The last review didn't work: ${attempt.error || "no answer"}${detail}` : "");
   if (!latest || !latest.review) {
-    const msg = status || "No review yet. One is written each morning once last night's sleep has synced.";
-    return `<section class="card" aria-label="Daily review"><div class="head"><h2>Daily review</h2>${button}</div><p class="${blocked || /didn't work/.test(msg) ? "small" : "muted small"}" ${blocked || /didn't work/.test(msg) ? 'style="color:var(--amber)"' : ""}>${h(msg)}</p>${reviewerLine(reviewer)}</section>`;
+    const msg = status || (lon ? "No monthly review yet. Claude writes one each month, after a morning's daily review; or ask for one now." : "No review yet. One is written each morning once last night's sleep has synced.");
+    return `<section class="card" aria-label="${title}"><div class="head"><h2>${title}</h2>${button}</div><p class="${blocked || /didn't work/.test(msg) ? "small" : "muted small"}" ${blocked || /didn't work/.test(msg) ? 'style="color:var(--amber)"' : ""}>${h(msg)}</p>${reviewerLine(reviewer)}</section>`;
   }
   const r = latest.review;
   const when = latest.finished ? new Date(latest.finished) : null;
@@ -115,8 +117,8 @@ export function reviewCard(app, data, { topics = null, compact = false } = {}) {
   let obs = r.observations || [];
   if (topics) obs = obs.filter((o) => topics.includes(o.topic));
   const head = `<div class="head"><div style="display:flex;flex-direction:column;gap:4px">
-      <h2>${compact ? "From today's review" : "Daily review"}</h2>
-      <span class="small muted">Written ${isToday ? time : `${shortDate(latest.day)} ${time}`} by Claude${nSources ? ` · ${nSources} source${nSources === 1 ? "" : "s"}` : ""}${!isToday ? " · not yet updated today" : ""}</span>
+      <h2>${compact ? "From today's review" : title}</h2>
+      <span class="small muted">Written ${isToday ? time : `${shortDate(latest.day, lon)}${lon ? "" : ` ${time}`}`} by Claude${nSources ? ` · ${nSources} source${nSources === 1 ? "" : "s"}` : ""}${!isToday && !lon ? " · not yet updated today" : ""}${lon ? " · a new one each month" : ""}</span>
     </div>${compact ? `<a href="/health/" data-action="page" data-arg="overview" class="small" style="min-height:44px;display:inline-flex;align-items:center">Full review on Overview ›</a>` : `<div class="inline">${button}</div>`}</div>`;
   const obsHtml = obs.length
     ? `<ul class="obs">${obs
@@ -131,14 +133,15 @@ export function reviewCard(app, data, { topics = null, compact = false } = {}) {
     : compact ? `<p class="muted small">Nothing about this in today's review.</p>` : "";
   if (compact) return `<section class="card" aria-label="From today's review">${head}${obsHtml}</section>`;
   const sugg = (r.suggestions || []).length
-    ? `<div style="display:flex;flex-direction:column;gap:10px"><h3>For today</h3><ul style="margin:0;padding-left:20px;display:flex;flex-direction:column;gap:8px;font-size:14px;line-height:1.5">${r.suggestions
+    ? `<div style="display:flex;flex-direction:column;gap:10px"><h3>${lon ? "For this month" : "For today"}</h3><ul style="margin:0;padding-left:20px;display:flex;flex-direction:column;gap:8px;font-size:14px;line-height:1.5">${r.suggestions
         .map((s) => `<li>${h(s.text)} ${s.why ? `<span class="muted">${h(s.why)}</span>` : ""}${reviewLinks(s.sources)}</li>`)
         .join("")}</ul></div>`
     : "";
   const caveats = (r.caveats || []).length ? `<ul class="tiny faint" style="margin:0;padding-left:18px">${r.caveats.map((c) => `<li>${h(c)}</li>`).join("")}</ul>` : "";
   const sent = latest.summary ? `<details class="why" data-k="review-sent"><summary>See what was sent</summary><div class="box"><pre style="white-space:pre-wrap;margin:0;font-size:12px;color:var(--soft)">${h(JSON.stringify(latest.summary, null, 2))}</pre></div></details>` : "";
-  return `<section class="card" aria-label="Daily review" style="gap:18px">
-    ${head}
+  const statusLine = status && (pending || /didn't work/.test(status)) ? `<p class="small" style="color:${pending ? "var(--muted)" : "var(--amber)"}">${h(status)}</p>` : "";
+  return `<section class="card" aria-label="${title}" style="gap:18px">
+    ${head}${lon ? statusLine : ""}
     <div style="display:flex;flex-direction:column;gap:8px;max-width:900px">
       <p class="headline">${h(r.headline)}</p>
       ${r.summary ? `<p style="font-size:15px;line-height:1.6" class="soft">${h(r.summary)}</p>` : ""}
@@ -152,9 +155,9 @@ export function reviewCard(app, data, { topics = null, compact = false } = {}) {
   </section>`;
 }
 
-export async function loadReview(app) {
+export async function loadReview(app, kind = "daily") {
   try {
-    return await app.get({ type: "health_hub/review" });
+    return await app.get(kind === "daily" ? { type: "health_hub/review" } : { type: "health_hub/review", kind });
   } catch (e) {
     return null;
   }
@@ -165,6 +168,12 @@ export const reviewActions = {
     await app.callService("health_hub", "request_review");
     app.toast("Asked Claude for a fresh review. It takes about a minute.");
     setTimeout(() => { app.cache.clear(); app.render(true); }, 70000);
+    app.render(true);
+  },
+  lonreview: async (app) => {
+    await app.call({ type: "health_hub/review/longevity/request" });
+    app.toast("Asked Claude for the monthly review. It takes a few minutes.");
+    for (const wait of [90000, 180000, 300000]) setTimeout(() => { app.cache.clear(); app.render(true); }, wait);
     app.render(true);
   },
 };

@@ -41,8 +41,15 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             await entry.runtime_data.async_rebuild_statistics()
 
     async def request_review(call: ServiceCall) -> None:
+        from homeassistant.exceptions import HomeAssistantError
+
+        from .core.review import ReviewError
+
         for entry in hass.config_entries.async_loaded_entries(DOMAIN):
-            await entry.runtime_data.reviews.async_request("manual")
+            try:
+                await entry.runtime_data.reviews.async_request("manual")
+            except ReviewError as err:
+                raise HomeAssistantError(str(err)) from err
 
     def _hubs():
         return [e.runtime_data for e in hass.config_entries.async_loaded_entries(DOMAIN)]
