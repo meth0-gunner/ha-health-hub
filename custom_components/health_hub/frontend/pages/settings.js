@@ -33,9 +33,11 @@ export function render(app, data) {
         ${field("block_weeks", "Weeks in a block", `type="number" min="1" max="12" value="${s.block_weeks}"`, "Rewards are counted at the end of each block.")}
         ${field("block_anchor", "Blocks count from (a Monday)", `type="date" value="${h(s.block_anchor || "")}"`, "Changing this moves every block.")}
       </div>
-      <h2>For heart-rate zones and load</h2>
+      <h2>About you</h2>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px" class="settings">
-        ${field("age", "Age", `type="number" min="10" max="110" value="${v(s.age)}"`, "Only used to estimate your maximum heart rate (208 − 0.7 × age).")}
+        <label>Sex<select name="sex"><option value="" ${!s.sex ? "selected" : ""}>Not set</option><option value="male" ${s.sex === "male" ? "selected" : ""}>Male</option><option value="female" ${s.sex === "female" ? "selected" : ""}>Female</option></select><span class="hint">Picks the right norms for fitness estimates on Longevity.</span></label>
+        ${field("height_cm", "Height (cm)", `type="number" min="100" max="250" value="${v(s.height_cm)}"`, "For BMI alongside your weigh-ins.")}
+        ${field("age", "Age", `type="number" min="10" max="110" value="${v(s.age)}"`, "Estimates your maximum heart rate (208 − 0.7 × age) and picks age-based guidance on Longevity.")}
         ${field("max_hr", "Maximum heart rate (bpm)", `type="number" min="100" max="230" value="${v(s.max_hr)}"`, `Overrides the estimate. In use now: ${s.effective_max_hr} bpm.`)}
       </div>
       <div class="inline"><button class="btn" type="submit">Save settings</button><span class="small muted">Health Hub ${h(data.info.version)} · time zone ${h(data.info.time_zone)}</span></div>
@@ -58,6 +60,8 @@ export const actions = {
       block_weeks: Number(data.block_weeks),
       age: data.age === "" ? null : Number(data.age),
       max_hr: data.max_hr === "" ? null : Number(data.max_hr),
+      sex: data.sex || null,
+      height_cm: data.height_cm === "" ? null : Number(data.height_cm),
     };
     if (data.block_anchor) changes.block_anchor = data.block_anchor;
     if (changes.weight_goal_kg !== null && !app.settings.weight_goal_set) changes.weight_goal_set = app.today;

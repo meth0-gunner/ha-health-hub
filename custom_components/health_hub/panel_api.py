@@ -5,6 +5,7 @@
     health_hub/range          per-day figures between two dates (trend views)
     health_hub/night          one night in full (Sleep page)
     health_hub/sleep_history  sleep by month since records began
+    health_hub/longevity      long-term habits against published guidance
     health_hub/settings/set   change goals and settings
     health_hub/training/log   log a gym or Compex session on a day
     health_hub/training/undo  remove a logged session
@@ -24,7 +25,7 @@ from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.util import dt as dt_util
 
-from .core import training, views
+from .core import longevity, training, views
 from .core.settings import SettingsError
 from .core.training import TrainingError
 
@@ -119,6 +120,11 @@ async def _sleep_history(hass, hub, msg):
     return await hass.async_add_executor_job(views.long_term_sleep, hub.calc, settings, _today())
 
 
+async def _longevity(hass, hub, msg):
+    settings = await hass.async_add_executor_job(hub.settings)
+    return await hass.async_add_executor_job(longevity.longevity_view, hub.calc, hub.store, settings, _today())
+
+
 async def _settings_set(hass, hub, msg):
     new = await hub.async_update_settings(msg["changes"])
     return views.settings_view(new)
@@ -181,6 +187,7 @@ COMMANDS = [
     _command({vol.Required("type"): "health_hub/range", vol.Required("start"): str, vol.Required("end"): str}, _range),
     _command({vol.Required("type"): "health_hub/night", vol.Required("date"): str}, _night),
     _command({vol.Required("type"): "health_hub/sleep_history"}, _sleep_history),
+    _command({vol.Required("type"): "health_hub/longevity"}, _longevity),
     _command({vol.Required("type"): "health_hub/settings/set", vol.Required("changes"): dict}, _settings_set),
     _command({vol.Required("type"): "health_hub/training", vol.Optional("date"): str}, _training),
     _command(

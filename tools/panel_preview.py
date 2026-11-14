@@ -25,7 +25,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from custom_components.health_hub.core import settings as settings_mod  # noqa: E402
-from custom_components.health_hub.core import training, views  # noqa: E402
+from custom_components.health_hub.core import longevity, training, views  # noqa: E402
 from custom_components.health_hub.core.metrics import Calculator  # noqa: E402
 from custom_components.health_hub.core.store import Store  # noqa: E402
 
@@ -86,6 +86,8 @@ class App:
             return views.night_view(self.calc, s, d("date"))
         if t == "health_hub/sleep_history":
             return views.long_term_sleep(self.calc, s, today)
+        if t == "health_hub/longevity":
+            return longevity.longevity_view(self.calc, self.store, s, today)
         if t == "health_hub/settings/set":
             return views.settings_view(settings_mod.update(self.store, msg["changes"]))
         if t == "health_hub/training":

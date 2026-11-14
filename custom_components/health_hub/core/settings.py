@@ -29,6 +29,8 @@ class Settings:
     compex_per_week: float = 4
     block_weeks: int = 4
     block_anchor: str | None = None  # a Monday; blocks run every block_weeks from it
+    sex: str | None = None  # "male" or "female": picks the fitness norms on Longevity
+    height_cm: int | None = None  # for BMI
 
     @property
     def effective_max_hr(self) -> int:
@@ -58,7 +60,10 @@ RANGES: dict[str, tuple[float, float]] = {
     "gym_per_week": (0.5, 14),
     "compex_per_week": (0.5, 14),
     "block_weeks": (1, 12),
+    "height_cm": (100, 250),
 }
+
+SEXES = ("male", "female")
 
 
 class SettingsError(ValueError):
@@ -90,6 +95,10 @@ def update(store: Store, changes: dict[str, Any]) -> Settings:
             except ValueError as err:
                 raise SettingsError(f"{key} must be a time like 22:45") from err
             value = f"{t.hour:02d}:{t.minute:02d}"
+        elif key == "sex":
+            value = str(value).lower()
+            if value not in SEXES:
+                raise SettingsError("sex must be male or female")
         elif key in ("weight_goal_set", "block_anchor"):
             try:
                 d = date.fromisoformat(str(value))

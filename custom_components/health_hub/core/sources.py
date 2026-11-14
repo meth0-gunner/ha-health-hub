@@ -49,4 +49,22 @@ SOURCES: dict[str, dict[str, object]] = {
         "year": 2001,
         "url": "https://doi.org/10.1016/S0735-1097(00)01054-8",
     },
+    "resting_hr_mortality": {
+        "title": "Resting heart rate and all-cause and cardiovascular mortality in the general population: a meta-analysis",
+        "publisher": "CMAJ (Zhang et al.)",
+        "year": 2016,
+        "url": "https://pubmed.ncbi.nlm.nih.gov/26598376/",
+    },
+    "cadence_moderate": {
+        "title": "Walking cadence (steps/min) and intensity in 21-40 year olds: CADENCE-adults",
+        "publisher": "International Journal of Behavioral Nutrition and Physical Activity (Tudor-Locke et al.)",
+        "year": 2019,
+        "url": "https://doi.org/10.1186/s12966-019-0769-6",
+    },
+    "relative_intensity": {
+        "title": "Cadence (steps/min) and relative intensity in 61 to 85-year-olds: the CADENCE-Adults study",
+        "publisher": "International Journal of Behavioral Nutrition and Physical Activity (McAvoy et al.)",
+        "year": 2023,
+        "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC10688086/",
+    },
 }

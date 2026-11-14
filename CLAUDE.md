@@ -34,7 +34,7 @@ explain in plain terms, he installs things, Claude writes and pushes code).
   hand-drawn SVG) served at `/health_hub_static/<version>/`, registered as an
   admin-only panel. Its data comes from `panel_api.py` commands built on
   `core/metrics.py` (scores), `core/views.py` (page payloads), `core/training.py`
-  (blocks and rewards), `core/settings.py` and `core/sources.py` (cited sources;
+  (blocks and rewards), `core/longevity.py` (Longevity report card), `core/settings.py` and `core/sources.py` (cited sources;
   add one only after opening it). Preview without HA:
   `python3 tools/panel_preview.py <copy of health_hub.db>` and take screenshots
   with Playwright before releasing.

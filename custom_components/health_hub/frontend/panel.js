@@ -11,6 +11,7 @@ import * as heart from "./pages/heart.js";
 import * as stress from "./pages/stress.js";
 import * as body from "./pages/body.js";
 import * as training from "./pages/training.js";
+import * as longevity from "./pages/longevity.js";
 import * as settings from "./pages/settings.js";
 
 const PAGES = [
@@ -22,6 +23,7 @@ const PAGES = [
   ["stress", "Stress & energy", stress],
   ["body", "Body", body],
   ["training", "Training", training],
+  ["longevity", "Longevity", longevity],
   ["settings", "Settings", settings],
 ];
 const BY_KEY = Object.fromEntries(PAGES.map(([k, , m]) => [k, m]));

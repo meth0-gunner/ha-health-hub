@@ -105,6 +105,24 @@ details.why .box { background: var(--inset); border: 1px solid #262D3A; border-r
 .pill.neutral, .pill.info { background: #2E3644; color: var(--text); }
 .tag { font-size: 12px; color: var(--muted); border: 1px solid var(--edge); border-radius: 999px; padding: 3px 10px; }
 
+/* longevity */
+.lv-areas { display: flex; flex-direction: column; gap: 20px; }
+.lv-title { font-size: 18px; color: var(--text); }
+.lv-pill { font-size: 12px; font-weight: 600; border-radius: 999px; padding: 3px 10px; white-space: nowrap; }
+.lv-good { background: rgba(79, 209, 197, 0.16); color: var(--teal); }
+.lv-fair { background: rgba(242, 166, 90, 0.16); color: var(--amber); }
+.lv-low { background: rgba(247, 118, 142, 0.16); color: var(--rose); }
+.lv-none { background: #222834; color: var(--muted); font-weight: 500; }
+.lv-action { font-size: 14px; color: var(--text); background: var(--inset); border: 1px solid #262D3A; border-radius: 12px; padding: 10px 14px; }
+.lv-action span { color: var(--blue); font-weight: 600; margin-right: 4px; }
+.lv-metric { display: grid; grid-template-columns: minmax(170px, 1fr) minmax(200px, 1.1fr) minmax(220px, 1.4fr); gap: 16px 24px; align-items: center; border-top: 1px solid var(--line); padding-top: 16px; }
+.lv-main, .lv-judge { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.lv-spark { min-width: 0; }
+.lv-nospark { align-self: center; }
+.lv-area details.why { margin-top: -8px; }
+@media (max-width: 860px) { .lv-metric { grid-template-columns: 1fr 1fr; } .lv-spark, .lv-nospark { grid-column: 1 / -1; } }
+@media (max-width: 520px) { .lv-metric { grid-template-columns: 1fr; } }
+
 /* charts */
 svg.wide { width: 100%; display: block; }
 .axis { display: flex; justify-content: space-between; font-size: 12px; color: var(--faint); padding-top: 6px; }

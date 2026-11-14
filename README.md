@@ -91,7 +91,14 @@ into the integration with hand-drawn charts and no add-on cards:
   and rewards; highlights; today at a glance; last night.
 - **Sleep**, **Readiness**, **Activity & load**, **Heart**, **Stress & energy**,
   **Body** (weigh-ins and goal), **Training** (calendar, past blocks, rewards
-  history) and **Settings** (goals and targets).
+  history), **Longevity** and **Settings** (goals, targets and about you).
+- **Longevity** is a report card of long-term habits: heart (resting heart
+  rate), movement (steps, moderate-or-harder minutes a week, strength days) and
+  sleep (time asleep, Sleep Regularity Index). Each figure covers the last 3
+  months, is rated On track, Fair or Needs attention against cited guidance
+  (WHO, AASM, large cohort studies), is compared with the 3 months before and
+  shows the last 12 months. Each area has one suggested action and links to
+  its detail page; nothing is entered there.
 - Day, Week, Month, Year or a custom range, and ‹ › to step through them.
 
 Every score and statement is worked out from your own data with a stated rule;
