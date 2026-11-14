@@ -291,7 +291,7 @@ def test_longevity_body_and_blood(store):
     assert bmi["trend"]["direction"] == "better"
     assert _metric(r, "waist_cm")["rating"] == "fair"
     bp = _metric(r, "bp")
-    assert bp["display"] == "124/76" and bp["rating"] == "fair" and bp["summary"].startswith("124/76, elevated")
+    assert bp["display"] == "124/76" and bp["rating"] == "fair" and bp["summary"].startswith("Elevated")
     assert _metric(r, "ldl")["rating"] == "good" and _metric(r, "hba1c")["value"] is None
     blood = next(a for a in r["areas"] if a["key"] == "blood")
     assert blood["rating"] == "good" and "missing" in blood["action"]
