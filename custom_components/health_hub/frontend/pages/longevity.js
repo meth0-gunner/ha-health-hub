@@ -95,7 +95,49 @@ function metric(app, m) {
       </div>
       ${spark(m)}
     </div>
-    ${why(app, { rule: m.rule, note: m.note }, { key: `why-lv-${m.key}`, label: `How ${m.label.toLowerCase()} is rated` })}`;
+    ${why(app, { rule: m.rule, note: m.note, sources: m.why_sources || [] }, { key: `why-lv-${m.key}`, label: `How ${m.label.replace(/\s*\(.*\)/, "").toLowerCase()} is rated` })}`;
+}
+
+const mmss = (sec) => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
+
+function fitnessAge(fa) {
+  if (!fa || !isNum(fa.age)) return "–";
+  return `${fa.bound === "under" ? "under " : fa.bound === "over" ? "over " : ""}${fa.age}`;
+}
+
+function walkTest(app, data) {
+  const ready = data.walk_test_ready;
+  const missing = [
+    !ready.sex && `<a href="/health/settings" data-action="page" data-arg="settings">your sex</a>`,
+    !ready.age && `<a href="/health/settings" data-action="page" data-arg="settings">your age</a>`,
+    !ready.weight && `<a href="/health/body" data-action="page" data-arg="body">a weigh-in from the last 90 days</a>`,
+  ].filter(Boolean);
+  const tests = data.walk_tests;
+  const now = new Date();
+  const hhmm = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  return `<details class="why lv-test" data-k="lv-walktest" ${tests.length ? "" : "open"}>
+      <summary>${tests.length ? "Do another walk test" : "Do the 1-mile walk test"}</summary>
+      <div class="lv-test-body">
+        <ol class="small soft lv-steps">
+          <li>Find a flat, measured mile (1.61 km): four laps of a 400 m running track and 9 m more, or a route you've measured on a map.</li>
+          <li>Wear the band. Warm up with 5–10 minutes of easy walking.</li>
+          <li>Walk the mile as fast as you can without running, at an even pace.</li>
+          <li>Note how long it took and the clock time you finished. If you can read your heart rate as you cross the line, note that too; otherwise the band's reading from that minute is used.</li>
+          <li class="faint">If you have a heart condition or haven't exercised in a while, check with your doctor first.</li>
+        </ol>
+        ${missing.length ? `<p class="small soft">Before the test can be scored, add ${missing.join(", ")}. Your weight comes from the Body page, so there's nothing to enter twice.</p>` : ""}
+        <form class="settings lv-form" data-submit="walk">
+          <label>Date<input name="date" type="date" value="${h(app.today)}" max="${h(app.today)}" required></label>
+          <label>Finished at<input name="finish" type="time" value="${h(hhmm)}" required></label>
+          <label>Time taken<span class="inline"><input name="minutes" type="number" min="5" max="60" required style="width:80px" aria-label="Minutes" placeholder="min"> : <input name="seconds" type="number" min="0" max="59" style="width:80px" aria-label="Seconds" placeholder="sec"></span></label>
+          <label>Heart rate at the finish (optional)<input name="hr" type="number" min="60" max="230" placeholder="from the band"></label>
+          <button class="btn" type="submit">Save walk test</button>
+        </form>
+      </div>
+    </details>
+    ${tests.length ? `<div class="scroll"><table><thead><tr><th>Date</th><th>Time</th><th>Finish heart rate</th><th>Weight</th><th>VO2max</th><th>Fitness age</th><th></th></tr></thead><tbody>${tests
+      .map((t) => `<tr><td>${h(shortDate(t.date, true))}</td><td>${mmss(t.seconds)}</td><td>${t.hr} bpm <span class="faint">(${t.hr_from === "band" ? "band" : "you"})</span></td><td>${isNum(t.weight_kg) ? `${num(t.weight_kg, 1)} kg` : "–"}</td><td>${isNum(t.vo2max) ? num(t.vo2max, 1) : "–"}</td><td>${h(fitnessAge(t.fitness_age))}</td><td><button class="btn" style="min-height:32px" data-action="delwalk" data-arg="${t.ts}">Delete</button></td></tr>`)
+      .join("")}</tbody></table></div>` : ""}`;
 }
 
 function partly(a) {
@@ -103,14 +145,15 @@ function partly(a) {
   return a.rating && rated < a.metrics.length ? `<span class="tiny faint">${rated} of ${a.metrics.length} rated</span>` : "";
 }
 
-function area(app, a) {
+function area(app, a, data) {
   return `<article class="card lv-area">
       <div class="head">
         <div class="inline"><h2 class="lv-title">${h(a.title)}</h2>${pill(a.rating)}${partly(a)}</div>
-        <a href="/health/${a.page}" data-action="page" data-arg="${a.page}" class="small">${h(PAGE_NAMES[a.page] || a.title)} page ›</a>
+        ${a.page ? `<a href="/health/${a.page}" data-action="page" data-arg="${a.page}" class="small">${h(PAGE_NAMES[a.page] || a.title)} page ›</a>` : ""}
       </div>
       ${a.action ? `<p class="lv-action"><span aria-hidden="true">→</span> ${h(a.action)}</p>` : ""}
       ${a.metrics.map((m) => metric(app, m)).join("")}
+      ${a.walk_test ? walkTest(app, data) : ""}
     </article>`;
 }
 
@@ -127,7 +170,20 @@ export function render(app, data) {
       <div class="head"><h2>How your habits compare with the long-term guidance</h2><span class="small">${parts.join(" · ")}</span></div>
       <p class="small soft">Up to ${h(shortDate(data.as_of, true))}. Each figure covers the last 3 months and is rated against published guidance or large studies of how habits relate to long-term health; the line shows the last 12 months. These describe habits across populations, not a diagnosis. The day-to-day detail stays on each area's own page.</p>
     </section>
-    ${data.areas.map((a) => area(app, a)).join("")}</div>`;
+    ${data.areas.map((a) => area(app, a, data)).join("")}</div>`;
 }
 
-export const actions = {};
+export const actions = {
+  walk: async (app, data) => {
+    const msg = { type: "health_hub/walk_test/log", date: data.date, finish: data.finish, minutes: Number(data.minutes), seconds: Number(data.seconds || 0) };
+    if (data.hr !== "") msg.hr = Number(data.hr);
+    await app.call(msg);
+    app.toast("Walk test saved.");
+    await app.render(true);
+  },
+  delwalk: async (app, arg) => {
+    await app.call({ type: "health_hub/walk_test/delete", ts: Number(arg) });
+    app.toast("Walk test deleted.");
+    await app.render(true);
+  },
+};

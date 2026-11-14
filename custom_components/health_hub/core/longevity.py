@@ -16,6 +16,7 @@ from datetime import date, datetime, time, timedelta
 from itertools import pairwise
 from typing import Any
 
+from . import fitness as fit
 from .metrics import Calculator, RawDay, from_noon
 from .settings import Settings
 from .store import Store
@@ -153,6 +154,81 @@ class Longevity:
         else:
             action = "The Movement targets below are the habits that work on it; check back on the trend in a month."
         return {"key": "heart", "title": "Heart", "page": "heart", "metrics": [rhr], "action": action}
+
+    # ----------------------------------------------------------- fitness
+
+    def cardio_fitness(self) -> dict[str, Any]:
+        st = self.settings
+        tests = fit.walk_tests(self.store, self.calc.tz, st.sex, st.age)
+        scored = [t for t in tests if t["vo2max"] is not None]
+        latest = scored[-1] if scored else None
+        prev = scored[-2] if len(scored) > 1 else None
+        rating = fit.rate(st.sex, st.age, latest["vo2max"]) if latest and st.sex and st.age else None
+        ref = fit.reference_for(st.sex, st.age) if st.sex and st.age else None
+        rough = fit.ratio_range(st.effective_max_hr, _median([r.rhr for r in self._window(0) if r.rhr]))
+        monthly: dict[str, float] = {}
+        for t in scored:
+            monthly[t["date"][:7]] = t["vo2max"]
+        if latest:
+            fa = latest["fitness_age"]
+            age_text = f"{'under ' if fa['bound'] == 'under' else 'over ' if fa['bound'] == 'over' else ''}{fa['age']}"
+            d = date.fromisoformat(latest["date"])
+            summary = f"1-mile walk test on {d.day} {d.strftime('%b %Y')} · fitness age {age_text}"
+        elif tests and not (st.sex and st.age):
+            summary = "set your sex and age in Settings to score your walk test"
+        else:
+            summary = "do the 1-mile walk test below"
+        trend = None
+        if latest and prev:
+            trend = _trend(latest["vo2max"], prev["vo2max"], "higher", 1.0)
+        return {
+            "key": "cardio_fitness",
+            "label": "Cardio fitness (VO2max)",
+            "value": latest["vo2max"] if latest else None,
+            "unit": "mL/kg/min",
+            "summary": summary,
+            "rating": rating,
+            "target": f"{ref['mean']:g}+ (average for healthy {'men' if st.sex == 'male' else 'women'} {ref['from']}–{ref['to'] if ref['to'] < 90 else '+'})" if ref else "set your sex and age in Settings",
+            "goal": ref["mean"] if ref else None,
+            "trend": trend,
+            "trend_label": "vs your previous test",
+            "better": "higher",
+            "detail": {
+                "fitness_age": latest["fitness_age"] if latest else None,
+                "rough_range": rough,
+                "last_test_days": (self.today - date.fromisoformat(latest["date"])).days if latest else None,
+            },
+            "monthly": [[m, monthly.get(m)] for m in self.months],
+            "rule": (
+                "VO2max is the most oxygen your body can use at full effort, the usual measure of cardio fitness. It's estimated "
+                "from a 1-mile walk done as fast as you can (the Rockport walk test: your weight, age, sex, time and heart rate at "
+                "the finish, worked out from treadmill tests of 343 adults aged 30–69). It's compared with treadmill tests of 3,816 healthy "
+                "Norwegian adults: at or above the average for your sex and age group is on track, within one standard deviation "
+                "below it fair, and lower needs attention (Health Hub's own bands). Fitness age is the age at which healthy people "
+                "of your sex in that study average your figure. In a follow-up of 37,000 Norwegian adults over 24 years, higher "
+                "estimated fitness went with lower risk of death in those under 60."
+            ),
+            "note": (
+                f"For comparison, a rough figure from your heart rates alone (maximum ÷ resting × 12 to 15.3) is "
+                f"{rough[0]:g}–{rough[1]:g}; it's only a guide, as the multiplier varies a lot between people."
+                if rough else None
+            ),
+            "sources": ["fitness_reference"],
+            "why_sources": ["rockport_walk", "fitness_reference", "fitness_mortality", "hr_ratio", "hr_ratio_general"],
+        }
+
+    def fitness(self) -> dict[str, Any]:
+        m = self.cardio_fitness()
+        d = m["detail"]
+        if m["value"] is None:
+            action = "Do the 1-mile walk test below: about 15 minutes on flat ground. Repeat it every couple of months to see the trend."
+        elif d["last_test_days"] is not None and d["last_test_days"] > 90:
+            action = f"Your last walk test was {d['last_test_days']} days ago: repeat it to see where you are now."
+        elif m["rating"] == GOOD:
+            action = "Above average for your age. Repeat the walk test every couple of months to keep track."
+        else:
+            action = "Meeting the Movement targets, including some vigorous minutes, is the way to raise it; repeat the test in 8 weeks."
+        return {"key": "fitness", "title": "Cardio fitness", "page": None, "metrics": [m], "action": action, "walk_test": True}
 
     # ---------------------------------------------------------- movement
 
@@ -417,7 +493,7 @@ class Longevity:
     # ------------------------------------------------------------ report
 
     def report(self) -> dict[str, Any]:
-        areas = [self.heart(), self.movement(), self.sleep()]
+        areas = [self.heart(), self.fitness(), self.movement(), self.sleep()]
         for a in areas:
             a["rating"] = _worst([m["rating"] for m in a["metrics"]])
             for m in a["metrics"]:
@@ -426,7 +502,16 @@ class Longevity:
                     t["before"] = _r(t["before"], 1)
                     t["change"] = _r(t["change"], 1)
         rated = [m for a in areas for m in a["metrics"] if m["rating"]]
+        st = self.settings
+        tests = fit.walk_tests(self.store, self.calc.tz, st.sex, st.age)
+        weights = self.store.measurements("weight")
         return {
+            "walk_tests": tests[::-1],
+            "walk_test_ready": {
+                "sex": st.sex is not None,
+                "age": st.age is not None,
+                "weight": bool(weights) and weights[-1]["ts"] >= int(datetime.combine(self.today, time(0), self.calc.tz).timestamp()) - fit.WEIGHT_MAX_AGE_DAYS * 86400,
+            },
             "as_of": self.last.isoformat(),
             "months": self.months,
             "areas": areas,

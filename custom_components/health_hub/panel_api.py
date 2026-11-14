@@ -6,6 +6,8 @@
     health_hub/night          one night in full (Sleep page)
     health_hub/sleep_history  sleep by month since records began
     health_hub/longevity      long-term habits against published guidance
+    health_hub/walk_test/log     add a 1-mile walk test
+    health_hub/walk_test/delete  remove a walk test
     health_hub/settings/set   change goals and settings
     health_hub/training/log   log a gym or Compex session on a day
     health_hub/training/undo  remove a logged session
@@ -25,7 +27,8 @@ from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.util import dt as dt_util
 
-from .core import longevity, training, views
+from .core import fitness, longevity, training, views
+from .core.fitness import FitnessError
 from .core.settings import SettingsError
 from .core.training import TrainingError
 
@@ -58,7 +61,7 @@ def _command(schema: dict, handler):
             return
         try:
             result = await handler(hass, hub, msg)
-        except (SettingsError, TrainingError, vol.Invalid, ValueError) as err:
+        except (SettingsError, TrainingError, FitnessError, vol.Invalid, ValueError) as err:
             connection.send_error(msg["id"], "invalid", str(err))
             return
         connection.send_result(msg["id"], result)
@@ -125,6 +128,19 @@ async def _longevity(hass, hub, msg):
     return await hass.async_add_executor_job(longevity.longevity_view, hub.calc, hub.store, settings, _today())
 
 
+async def _walk_test_log(hass, hub, msg):
+    day = _date(msg["date"])
+    ts = fitness.finish_ts(day, msg["finish"], dt_util.get_default_time_zone())
+    seconds = int(msg["minutes"]) * 60 + int(msg.get("seconds") or 0)
+    await hass.async_add_executor_job(fitness.log_walk_test, hub.store, ts, seconds, msg.get("hr"))
+    return await _longevity(hass, hub, msg)
+
+
+async def _walk_test_delete(hass, hub, msg):
+    await hass.async_add_executor_job(fitness.delete_walk_test, hub.store, int(msg["ts"]))
+    return await _longevity(hass, hub, msg)
+
+
 async def _settings_set(hass, hub, msg):
     new = await hub.async_update_settings(msg["changes"])
     return views.settings_view(new)
@@ -188,6 +204,18 @@ COMMANDS = [
     _command({vol.Required("type"): "health_hub/night", vol.Required("date"): str}, _night),
     _command({vol.Required("type"): "health_hub/sleep_history"}, _sleep_history),
     _command({vol.Required("type"): "health_hub/longevity"}, _longevity),
+    _command(
+        {
+            vol.Required("type"): "health_hub/walk_test/log",
+            vol.Required("date"): str,
+            vol.Required("finish"): str,
+            vol.Required("minutes"): vol.All(vol.Coerce(int), vol.Range(min=5, max=60)),
+            vol.Optional("seconds"): vol.All(vol.Coerce(int), vol.Range(min=0, max=59)),
+            vol.Optional("hr"): vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=60, max=230))),
+        },
+        _walk_test_log,
+    ),
+    _command({vol.Required("type"): "health_hub/walk_test/delete", vol.Required("ts"): int}, _walk_test_delete),
     _command({vol.Required("type"): "health_hub/settings/set", vol.Required("changes"): dict}, _settings_set),
     _command({vol.Required("type"): "health_hub/training", vol.Optional("date"): str}, _training),
     _command(

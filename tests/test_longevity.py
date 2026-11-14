@@ -142,7 +142,7 @@ def test_strength_days_from_training_log(store):
 def test_no_data_is_not_rated(store):
     r = _report(store, lambda d: RawDay(day=d))
     assert r["rated"] == 0 and all(a["rating"] is None for a in r["areas"])
-    assert r["total"] == 6
+    assert r["total"] == 7
 
 
 def test_settings_sex_and_height(store):
@@ -160,3 +160,80 @@ def test_report_uses_whole_days(store):
     Longevity(FakeCalc(lambda d: seen.append(d) or RawDay(day=d)), store, settings_mod.load(store), TODAY)
     assert max(seen) == TODAY - timedelta(days=1)
     assert min(seen) <= date(2025, 11, 1)
+
+
+# ------------------------------------------------------------- fitness
+
+from custom_components.health_hub.core import fitness
+
+
+def test_rockport_equation():
+    # 30-year-old man, 180 lb, 12:15, finish 165 bpm: 47.88 in published worked examples.
+    assert fitness.rockport(180 / fitness.LB_PER_KG, 30, True, 12.25, 165) == pytest.approx(47.88, abs=0.05)
+
+
+def test_fitness_age_and_rating():
+    assert fitness.fitness_age("male", 49.1) == {"age": 35, "bound": None}
+    assert fitness.fitness_age("male", 45.0)["age"] == 50  # between 47.2 (45) and 42.6 (55)
+    assert fitness.fitness_age("male", 60) == {"age": 25, "bound": "under"}
+    assert fitness.fitness_age("female", 20)["bound"] == "over"
+    assert fitness.rate("male", 38, 50) == "good"
+    assert fitness.rate("male", 38, 43) == "fair"  # within one SD (7.5) of 49.1
+    assert fitness.rate("male", 38, 40) == "low"
+    assert fitness.ratio_range(180, 60) == [36.0, 45.9]
+
+
+def _ts(day, hhmm):
+    return fitness.finish_ts(day, hhmm, TZ)
+
+
+def test_walk_test_needs_weight_then_scores(store):
+    day = TODAY - timedelta(days=3)
+    finish = _ts(day, "07:30")
+    with pytest.raises(fitness.FitnessError, match="weigh-in"):
+        fitness.log_walk_test(store, finish, 13 * 60, 150)
+    store.add_measurement(finish - 5 * 86400, "weight", 82.0)
+    fitness.log_walk_test(store, finish, 13 * 60 + 30, 150)
+    tests = fitness.walk_tests(store, TZ, "male", 38)
+    assert len(tests) == 1 and tests[0]["hr_from"] == "manual"
+    expect = fitness.rockport(82.0, 38 - 3 / 365.25, True, 13.5, 150)
+    assert tests[0]["vo2max"] == round(expect, 1)
+
+    r = _report(store, lambda d: RawDay(day=d, rhr=60), sex="male", age=38)
+    m = _metric(r, "cardio_fitness")
+    assert m["value"] == tests[0]["vo2max"] and m["rating"] is not None
+    assert m["detail"]["fitness_age"] == tests[0]["fitness_age"]
+    assert r["walk_tests"][0]["ts"] == finish and r["walk_test_ready"]["weight"]
+
+    assert fitness.delete_walk_test(store, finish)
+    assert fitness.walk_tests(store, TZ, "male", 38) == []
+
+
+def test_walk_test_uses_band_heart_rate(store):
+    day = TODAY - timedelta(days=1)
+    finish = _ts(day, "18:05")
+    store.add_measurement(finish, "weight", 80.0)
+    with pytest.raises(fitness.FitnessError, match="no heart rate"):
+        fitness.log_walk_test(store, finish, 900, None)
+    with store._lock, store._db:
+        for i, hr in enumerate((138, 146, 141)):
+            store._db.execute("INSERT INTO minute_samples (device_id, ts, heart_rate) VALUES (1, ?, ?)", (finish - 60 + i * 60, hr))
+    logged = fitness.log_walk_test(store, finish, 900, None)
+    assert logged["hr"] == 146 and logged["hr_from"] == "band"
+    assert fitness.walk_tests(store, TZ, "male", 38)[0]["hr_from"] == "band"
+
+
+def test_walk_test_checks_inputs(store):
+    with pytest.raises(fitness.FitnessError):
+        fitness.log_walk_test(store, _ts(TODAY, "00:01"), 100, 150)
+    with pytest.raises(fitness.FitnessError, match="future"):
+        fitness.finish_ts(date.today() + timedelta(days=2), "08:00", TZ)
+    with pytest.raises(fitness.FitnessError):
+        fitness.finish_ts(TODAY, "soon", TZ)
+
+
+def test_no_walk_test_shows_rough_range(store):
+    r = _report(store, lambda d: RawDay(day=d, rhr=60), sex="male", age=38, max_hr=180)
+    m = _metric(r, "cardio_fitness")
+    assert m["value"] is None and m["detail"]["rough_range"] == [36.0, 45.9]
+    assert "walk test" in next(a for a in r["areas"] if a["key"] == "fitness")["action"]

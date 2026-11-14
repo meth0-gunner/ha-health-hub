@@ -120,6 +120,12 @@ details.why .box { background: var(--inset); border: 1px solid #262D3A; border-r
 .lv-spark { min-width: 0; }
 .lv-nospark { align-self: center; }
 .lv-area details.why { margin-top: -8px; }
+details.lv-test > summary { font-weight: 500; }
+.lv-test-body { display: grid; grid-template-columns: minmax(260px, 1.2fr) minmax(260px, 1fr); gap: 20px; background: var(--inset); border: 1px solid #262D3A; border-radius: 12px; padding: 16px 18px; }
+.lv-steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; line-height: 1.5; }
+.lv-form { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-content: start; }
+.lv-form .btn { grid-column: 1 / -1; justify-self: start; }
+@media (max-width: 860px) { .lv-test-body { grid-template-columns: 1fr; } }
 @media (max-width: 860px) { .lv-metric { grid-template-columns: 1fr 1fr; } .lv-spark, .lv-nospark { grid-column: 1 / -1; } }
 @media (max-width: 520px) { .lv-metric { grid-template-columns: 1fr; } }
 

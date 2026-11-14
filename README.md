@@ -98,7 +98,12 @@ into the integration with hand-drawn charts and no add-on cards:
   months, is rated On track, Fair or Needs attention against cited guidance
   (WHO, AASM, large cohort studies), is compared with the 3 months before and
   shows the last 12 months. Each area has one suggested action and links to
-  its detail page; nothing is entered there.
+  its detail page.
+- **Cardio fitness** on Longevity comes from a guided 1-mile walk test (the
+  Rockport test: your time, heart rate at the finish, and your weight from the
+  Body page), compared with treadmill tests of healthy adults your age, with a
+  fitness age. A rough figure from resting and maximum heart rate is shown
+  alongside for comparison only.
 - Day, Week, Month, Year or a custom range, and ‹ › to step through them.
 
 Every score and statement is worked out from your own data with a stated rule;
